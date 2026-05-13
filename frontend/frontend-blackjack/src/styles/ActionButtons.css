@@ -1,0 +1,45 @@
+.action-buttons-container {
+  display: flex;
+  flex-direction: row;
+  gap: 15px;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-action {
+  padding: 12px 25px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+  transition: transform 0.1s, filter 0.2s;
+}
+
+.btn-action:active {
+  transform: translateY(2px);
+}
+
+.btn-action:disabled {
+  background-color: #444 !important;
+  color: #777 !important;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-hit {
+  background-color: #27ae60; 
+}
+.btn-hit:hover:not(:disabled) { filter: brightness(1.2); }
+
+.btn-stand {
+  background-color: #c0392b;
+}
+.btn-stand:hover:not(:disabled) { filter: brightness(1.2); }
+
+.btn-special {
+  background-color: #2980b9;
+}
+.btn-special:hover:not(:disabled) { filter: brightness(1.2); }

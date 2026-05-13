@@ -1,0 +1,16 @@
+# Root .gitignore
+
+# 에디터 및 OS 설정 (최상위에서 한 번에 관리)
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+Thumbs.db
+
+# 백엔드 및 프론트엔드 빌드 결과물
+blackjack/build/
+blackjack/.gradle/
+frontend/node_modules/
+frontend/dist/

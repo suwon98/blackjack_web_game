@@ -1,0 +1,26 @@
+# Backend .gitignore (blackjack/.gitignore)
+
+.gradle/
+build/
+bin/
+out/
+
+# 민감 정보 포함 파일 (반드시 제외)
+src/main/resources/application-secrets.yml
+
+### STS / IntelliJ ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
