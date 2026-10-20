@@ -208,3 +208,19 @@
 .stamp-lose { color: #e74c3c; border-color: #e74c3c; background: rgba(231, 76, 60, 0.1); }
 .stamp-push { color: #3498db; border-color: #3498db; background: rgba(52, 152, 219, 0.1); }
 .stamp-gray { color: #95a5a6; border-color: #95a5a6; background: rgba(149, 165, 166, 0.1); }
+/* Readable labels and a flowing table at narrow widths. */
+.status-badge { background: #092d22e8; color: #fff; border: 1px solid #7ca68c55; border-radius: 8px; padding: 5px 9px; font-size: .8rem; line-height: 1.5; }
+.bottom-badge { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.hands-wrapper { flex-wrap: wrap; max-width: 360px; }
+.casino-table-wrapper { min-height: 560px; }
+@media (max-width: 760px) {
+  .casino-table-wrapper { aspect-ratio: auto; min-height: 440px; overflow: visible; }
+  .casino-table { width: 100%; height: auto; min-height: 440px; border-width: 6px; border-radius: 90px 90px 20px 20px; padding: 20px 12px; }
+  .dealer-area { position: relative; top: auto; left: auto; transform: none; margin: 0 auto 35px; }
+  .players-arc-area { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 24px 12px; padding-top: 30px; }
+  .seat-slot { position: relative; inset: auto; transform: none; width: calc(50% - 12px); min-width: 130px; }
+  .pos-0 { order: 10; width: 100%; }
+  .table-center-overlay { position: relative; top: auto; left: auto; transform: none; margin: 12px auto; min-width: 0; width: 100%; padding: 18px 10px; }
+  .chip-buttons { flex-wrap: wrap; gap: 8px; }
+  .card-shoe { transform: rotate(-25deg) scale(.65); transform-origin: top right; }
+}

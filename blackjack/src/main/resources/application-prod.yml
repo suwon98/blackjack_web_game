@@ -1,0 +1,23 @@
+spring:
+  config:
+    import: optional:configtree:/run/secrets/
+  datasource:
+    url: ${DB_URL:jdbc:mariadb://db:3306/blackjack}
+    driver-class-name: org.mariadb.jdbc.Driver
+    username: ${DB_USERNAME:blackjack}
+    password: ${db-password}
+    hikari:
+      maximum-pool-size: 12
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+jwt:
+  secret: ${jwt-secret}
+server:
+  shutdown: graceful
+  forward-headers-strategy: framework
+spring.lifecycle.timeout-per-shutdown-phase: 20s
+app:
+  frontend-url: https://${DOMAIN}

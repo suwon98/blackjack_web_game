@@ -18,7 +18,7 @@ const RegisterPage: React.FC = () => {
       navigate('/login');
     } catch (error) {
       if(axios.isAxiosError(error) && error.response) {
-        alert(error.response.data || '회원가입에 실패했습니다.');
+        alert(error.response.data?.message || '회원가입에 실패했습니다.');
       } else {
         alert('서버와 통신할 수 없습니다.');
       }

@@ -1,0 +1,12 @@
+**/node_modules
+**/build
+**/.gradle
+**/dist
+**/data
+.run
+deploy/secrets
+**/.env*
+**/repomix*
+**/.git
+backups
+*.tar.gz

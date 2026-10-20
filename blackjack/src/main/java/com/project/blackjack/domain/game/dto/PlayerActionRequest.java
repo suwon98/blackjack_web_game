@@ -11,4 +11,5 @@ public class PlayerActionRequest {
     private String username;
     private PlayerAction action;
     private int handIndex;
+    private long revision;
 }

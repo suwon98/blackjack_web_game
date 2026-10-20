@@ -265,3 +265,16 @@
   font-weight: bold;
   cursor: pointer;
 }
+.game-container { color: #edf4f0; padding: 20px 24px 120px; }
+.game-header-top h1 { font-size: clamp(1rem, 2vw, 1.5rem); overflow-wrap: anywhere; text-align: left; }
+.game-header-top { gap: 16px; }
+.btn-leave { flex-shrink: 0; }
+.bottom-action-bar { height: auto; min-height: 80px; padding: 10px; }
+.insurance-bar { flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) {
+  .game-container { padding: 14px 12px 120px; }
+  .game-header { font-size: .8rem; }
+  .action-bar-content { gap: 6px; }
+  .action-buttons-container { flex-wrap: wrap; justify-content: center; gap: 6px; padding: 0; margin: 0; }
+  .action-buttons-container .btn-action { font-size: .85rem; padding: 10px 12px; }
+}

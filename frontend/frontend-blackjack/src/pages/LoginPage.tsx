@@ -18,7 +18,7 @@ const LoginPage: React.FC = () => {
       const response = await loginAPI({username, password});
       
       // 🚀 백엔드에서 데이터가 정확히 어떻게 오는지 콘솔에 출력!
-      console.log("로그인 응답 데이터:", response.data); 
+       
 
       setTokens(response.data.accessToken, response.data.refreshToken);
       navigate('/');
@@ -35,6 +35,7 @@ const LoginPage: React.FC = () => {
   return (
     <div className="auth-container">
       <h1>로그인</h1>
+      {import.meta.env.VITE_GOOGLE_LOGIN === "true" && <a href="/oauth2/authorization/google">Google로 로그인</a>}
       <form className="auth-form" onSubmit={handleLogin}>
         <input 
           type="text" 

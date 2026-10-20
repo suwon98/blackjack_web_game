@@ -11,6 +11,13 @@ public class RoomResponse {
     private int currentPlayers;
     private boolean isPrivate;
     private long minBet;
+    private boolean paused;
+    @lombok.Setter private boolean joined;
+    private boolean playing;
+    @com.fasterxml.jackson.annotation.JsonProperty("isPrivate")
+    public boolean isPrivate() { return isPrivate; }
+    @com.fasterxml.jackson.annotation.JsonProperty("isPlaying")
+    public boolean isPlaying() { return playing; }
 
     public RoomResponse(Room room) {
         this.roomId = room.getRoomId();
@@ -19,5 +26,7 @@ public class RoomResponse {
         this.currentPlayers = room.getTotalPlayerCount();
         this.isPrivate = room.isPrivate();
         this.minBet = room.getMinBet();
+        this.paused = room.isPaused();
+        this.playing = room.getGame() != null && room.getGame().getState() != com.project.blackjack.domain.game.entity.GameState.WAITING;
     }
 }

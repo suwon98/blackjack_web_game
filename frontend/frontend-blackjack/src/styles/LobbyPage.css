@@ -161,3 +161,11 @@
 .btn-signup:hover {
   background-color: #27ae60;
 }
+.lobby-header-top { flex-wrap: wrap; gap: 16px; }
+.user-info-badge { flex-wrap: wrap; justify-content: center; }
+.lobby-controls { display: flex; gap: 10px; margin: 24px 0; }
+.btn-create, .btn-refresh, .btn-join { background: #24674f; color: white; padding: 10px 18px; border: 1px solid #6e9f86; border-radius: 8px; }
+.room-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; text-align: left; }
+.room-card { background: #1c302b; border: 1px solid #3a5448; border-radius: 12px; padding: 20px; }
+.room-info h3 { color: #fff; }
+@media (max-width: 600px) { .lobby-container { padding: 18px; } }

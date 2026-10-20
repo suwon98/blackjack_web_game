@@ -23,6 +23,7 @@ public class Room {
     private Set<String> observers;
 
     private BlackjackGame game;
+    private boolean paused;
 
     public static Room create(String title, int maxPlayers, boolean isPrivate, String inviteCode, long minBet) {
         Room room = new Room();
@@ -43,7 +44,10 @@ public class Room {
         }
     }
 
-    public boolean takeSeat(String username, int seatIndex) {
+    public boolean contains(String username) { return seats.containsValue(username) || observers.contains(username); }
+
+    public synchronized boolean takeSeat(String username, int seatIndex) {
+        if (!contains(username) || seats.containsValue(username)) return false;
         if (seatIndex < 1 || seatIndex > maxPlayers) return false;
         if (seats.containsKey(seatIndex)) return false;
 

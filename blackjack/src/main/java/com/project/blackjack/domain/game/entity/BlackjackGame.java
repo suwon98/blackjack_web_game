@@ -15,6 +15,10 @@ public class BlackjackGame {
     private List<Player> players;
     private GameState state;
     private int currentPlayerIndex;
+    private long revision;
+    private long deadline;
+    private long roundId;
+    private boolean settled;
 
     private Map<String, Long> roundBets = new ConcurrentHashMap<>();
     private Map<String, Boolean> insuranceDecisions = new ConcurrentHashMap<>();

@@ -9,7 +9,6 @@ import com.project.blackjack.domain.member.entity.Role;
 import com.project.blackjack.domain.member.repository.MemberRepository;
 import com.project.blackjack.global.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +21,7 @@ public class MemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
-    private final StringRedisTemplate redisTemplate;
+    private final com.project.blackjack.global.security.RefreshTokenStore tokenStore;
 
     @Transactional
     public Long join(MemberJoinRequest request) {
@@ -55,15 +54,10 @@ public class MemberService {
             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
         }
 
-        String accessToken = jwtTokenProvider.createAccessToken(member.getUsername(), member.getRole());
         String refreshToken = jwtTokenProvider.createRefreshToken(member.getUsername());
+        String accessToken = jwtTokenProvider.createAccessToken(member.getUsername(), member.getRole(),jwtTokenProvider.tokenId(refreshToken));
 
-        redisTemplate.opsForValue().set(
-                "RT:" + member.getUsername(),
-                refreshToken,
-                7,
-                TimeUnit.DAYS
-        );
+        tokenStore.save(member.getUsername(), refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
     }
@@ -77,47 +71,40 @@ public class MemberService {
     }
 
     @Transactional
-    public Long rechargeMoney(String username, Long amount) {
-        Member member = memberRepository.findByUsername(username)
+    public Long rechargeMoney(String username) {
+        Member member = memberRepository.lockByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        member.addMoney(amount);
+        if (member.getMoney() >= 1000) throw new IllegalArgumentException("잔액이 1,000 미만일 때만 칩 충전할 수 있습니다.");
+        member.addMoney(100000L);
         return member.getMoney();
     }
 
     @Transactional
     public TokenResponse reissue(String refreshToken) {
-        if (!jwtTokenProvider.validateToken(refreshToken)) {
+        if (!jwtTokenProvider.validateRefreshToken(refreshToken)) {
             throw new IllegalArgumentException("Refresh Token이 유효하지 않거나 만료되었습니다.");
         }
 
         String username = jwtTokenProvider.getAuthentication(refreshToken).getName();
 
-        String savedRefreshToken = redisTemplate.opsForValue().get("RT:" + username);
-        if (savedRefreshToken == null || !savedRefreshToken.equals(refreshToken)) {
+        if (!tokenStore.matches(username, refreshToken)) {
             throw new IllegalArgumentException("로그아웃 된 사용자이거나, 일치하지 않는 토큰입니다.");
         }
 
         Member member = memberRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        String newAccessToken = jwtTokenProvider.createAccessToken(member.getUsername(), member.getRole());
         String newRefreshToken = jwtTokenProvider.createRefreshToken(member.getUsername());
+        String newAccessToken = jwtTokenProvider.createAccessToken(member.getUsername(), member.getRole(),jwtTokenProvider.tokenId(newRefreshToken));
 
-        redisTemplate.opsForValue().set(
-                "RT:" + member.getUsername(),
-                newRefreshToken,
-                7,
-                TimeUnit.DAYS
-        );
+        tokenStore.save(member.getUsername(), newRefreshToken);
 
         return new TokenResponse(newAccessToken, newRefreshToken);
     }
 
     @Transactional
     public void logout(String username) {
-        if (redisTemplate.opsForValue().get("RT:" + username) != null) {
-            redisTemplate.delete("RT:" + username);
-        }
+        tokenStore.delete(username);
     }
 }

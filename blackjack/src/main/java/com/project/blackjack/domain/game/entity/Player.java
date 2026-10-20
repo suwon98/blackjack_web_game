@@ -35,7 +35,9 @@ public class Player extends Participant {
         long requiredBet = targetHand.getBetAmount();
         Card splitCard = targetHand.removeSecondCardForSplit();
 
+        targetHand.setSplit(true);
         Hand newHand = new Hand(requiredBet);
+        newHand.setSplit(true);
         newHand.addCard(splitCard);
 
         hands.add(newHand);

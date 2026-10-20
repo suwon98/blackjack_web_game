@@ -8,8 +8,12 @@ import java.util.List;
 @Getter
 public class Hand {
     private final List<Card> cards = new ArrayList<>();
-    private HandStatus status = HandStatus.PLAYING;
+    @lombok.Setter private HandStatus status = HandStatus.PLAYING;
     private long betAmount;
+    @lombok.Setter private boolean split;
+    @lombok.Setter private String result;
+    @lombok.Setter private long payout;
+    public boolean isNaturalBlackjack() { return !split && cards.size() == 2 && calculateScore() == 21; }
 
     public Hand(long betAmount) {
         this.betAmount = betAmount;

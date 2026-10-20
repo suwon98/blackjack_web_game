@@ -10,13 +10,14 @@ interface ActionButtonsProps {
   betAmount: number;
   cardCount: number;
   handCount: number;
+  canSplitHand: boolean;
 }
 
 const ActionButtons: React.FC<ActionButtonsProps> = ({
-  handIndex, playerMoney, betAmount, cardCount, handCount
+  handIndex, playerMoney, betAmount, cardCount, handCount, canSplitHand
 }) => {
   const {roomId} = useParams<{roomId: string}>();
-  const {sendAction} = useGameStore();
+  const {sendAction, pending, isConnected} = useGameStore();
 
   if(!roomId) return null;
 
@@ -25,11 +26,11 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
   };
 
   const canDoubleDown = playerMoney >= betAmount && cardCount === 2;
-  const canSplit = playerMoney >= betAmount && cardCount === 2;
+  const canSplit = playerMoney >= betAmount && canSplitHand && handCount < 4;
   const canSurrender = cardCount === 2 && handCount === 1;
 
   return (
-    <div className="action-buttons-container">
+    <fieldset className="action-buttons-container" disabled={pending || !isConnected} style={{ border: 0 }}>
       <button className="btn-action btn-hit" onClick={() => handleAction('HIT')}>
         Hit
       </button>
@@ -57,7 +58,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
       >
         Surrender
       </button>
-    </div>
+    </fieldset>
   );
 };
 

@@ -18,6 +18,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MemberController {
     private final MemberService memberService;
+    private final com.project.blackjack.domain.game.repository.ReceiptRepository receipts;
+    @GetMapping("/history") public Object history(Authentication auth) { return receipts.findTop20ByUsernameOrderByCreatedAtDesc(auth.getName()); }
 
     @PostMapping("/join")
     public ResponseEntity<String> join(@Valid @RequestBody MemberJoinRequest request) {
@@ -40,9 +42,9 @@ public class MemberController {
     }
 
     @PostMapping("/recharge")
-    public ResponseEntity<Long> recharge(@RequestParam Long amount, Authentication authentication) {
+    public ResponseEntity<Long> recharge(Authentication authentication) {
         String username = authentication.getName();
-        Long updatedMoney = memberService.rechargeMoney(username, amount);
+        Long updatedMoney = memberService.rechargeMoney(username);
         return ResponseEntity.ok(updatedMoney);
     }
 

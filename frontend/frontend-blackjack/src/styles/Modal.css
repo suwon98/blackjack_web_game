@@ -56,3 +56,4 @@
   border-radius: 4px;
   cursor: pointer;
 }
+.modal-content { width: min(440px, 94vw); max-height: 90vh; overflow-y: auto; }

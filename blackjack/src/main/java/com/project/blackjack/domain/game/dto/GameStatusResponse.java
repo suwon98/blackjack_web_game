@@ -17,10 +17,25 @@ public class GameStatusResponse {
     private final List<PlayerDto> players;
     private final Map<Integer, String> seats;
     private final int remainingCards;
+    @lombok.Setter private boolean paused;
+    @lombok.Setter private String title;
+    private final long serverTime = System.currentTimeMillis();
+    private final long revision;
+    private final long deadline;
+    private final long roundId;
+    @lombok.Setter private long minBet;
+    @lombok.Setter private int maxPlayers;
+    private final Map<String, Long> bets;
+    private final Map<String, Boolean> insuranceDecisions;
 
     public GameStatusResponse(String roomId, BlackjackGame game, Map<Integer, String> seats) {
         this.roomId = roomId;
-        this.seats = seats;
+        this.seats = seats == null ? Map.of() : Map.copyOf(seats);
+        this.revision = game == null ? 0 : game.getRevision();
+        this.deadline = game == null ? 0 : game.getDeadline();
+        this.roundId = game == null ? 0 : game.getRoundId();
+        this.bets = game == null ? Map.of() : Map.copyOf(game.getRoundBets());
+        this.insuranceDecisions = game == null ? Map.of() : Map.copyOf(game.getInsuranceDecisions());
 
         if (game != null) {
             this.state = game.getState();
@@ -84,12 +99,20 @@ public class GameStatusResponse {
         private final long betAmount;
         private final int score;
         private final String status;
+        private final boolean naturalBlackjack;
+        private final boolean canSplit;
+        private final String result;
+        private final long payout;
 
         public HandDto(Hand hand) {
             this.cards = hand.getCards().stream().map(CardDto::new).collect(Collectors.toList());
             this.betAmount = hand.getBetAmount();
             this.score = hand.calculateScore();
             this.status = hand.getStatus().name();
+            this.naturalBlackjack = hand.isNaturalBlackjack();
+            this.canSplit = hand.canSplit();
+            this.result = hand.getResult();
+            this.payout = hand.getPayout();
         }
     }
 
@@ -97,6 +120,7 @@ public class GameStatusResponse {
     public static class CardDto {
         private final String suit;
         private final String denomination;
+        @com.fasterxml.jackson.annotation.JsonProperty("isHidden")
         private final boolean isHidden;
 
         public CardDto(Card card) {

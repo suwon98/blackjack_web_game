@@ -1,0 +1,24 @@
+.chat-panel { color: #eaf4ef; background: #152a26; border: 1px solid #52756a; border-radius: 16px; padding: 16px; margin: 24px auto; max-width: 840px; text-align: left; }
+.chat-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.chat-heading h2 { margin: 0; font-size: 1.05rem; flex: 1; }
+.chat-panel button { background: #294b41; color: #fff; border: 1px solid #6a9183; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.chat-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.chat-panel button:focus-visible, .chat-panel input:focus-visible { outline: 3px solid #f8ce73; outline-offset: 2px; }
+.chat-online { color: #8de5b6; font-size: .8rem; }
+.chat-offline, .chat-error { color: #ffc1aa; }
+.chat-hint, .chat-empty { color: #b6cbc3; font-size: .8rem; }
+.chat-messages { height: 220px; overflow-y: auto; overscroll-behavior: contain; padding: 8px; border-radius: 10px; background: #0d1c19; }
+.chat-message { margin-bottom: 12px; border-left: 3px solid #4d7162; padding: 5px 10px; }
+.chat-mine { border-color: #f8ce73; }
+.chat-meta { display: flex; gap: 12px; align-items: baseline; }
+.chat-meta strong { overflow-wrap: anywhere; font-size: .85rem; }
+.chat-meta time { flex-shrink: 0; color: #aac1b6; font-size: .7rem; }
+.chat-message p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.chat-message .chat-emoji { font-size: 1.8rem; }
+.chat-reactions { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+.chat-reactions button { font-size: 1.2rem; min-width: 42px; }
+.chat-form { display: flex; gap: 8px; }
+.chat-form input { flex: 1; min-width: 0; color: #f4faf6; background: #0d1c19; border: 1px solid #6a9183; border-radius: 8px; padding: 12px; font: inherit; }
+.chat-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.chat-error { font-size: .85rem; margin: 10px 0 0; }
+@media (max-width: 600px) { .chat-panel { padding: 12px; } .chat-messages { height: 180px; } .chat-heading { gap: 8px; } }

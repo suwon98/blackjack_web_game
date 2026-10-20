@@ -6,485 +6,285 @@ import com.project.blackjack.domain.member.entity.Member;
 import com.project.blackjack.domain.member.repository.MemberRepository;
 import com.project.blackjack.domain.room.entity.Room;
 import com.project.blackjack.domain.room.repository.RoomManager;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import org.springframework.transaction.support.TransactionTemplate;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class GameService {
     private final RoomManager roomManager;
-    private final MemberRepository memberRepository;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final Map<String, Long> roomBettingTimestamps = new ConcurrentHashMap<>();
-
-    @Lazy
-    @Autowired
-    private GameService self;
-
-    @Transactional
-    public void sitDown(String roomId, String username, int seatIndex) {
-        Room room = roomManager.findById(roomId);
-        if(room == null) return;
-
-        boolean success = room.takeSeat(username, seatIndex);
-        if(!success) {
-            throw new IllegalArgumentException("이미 다른 유저가 앉아있거나 유효하지 않은 자리입니다.");
-        }
-
-        broadcastGameState(roomId, room.getGame());
+    private final MemberRepository members;
+    private final SimpMessagingTemplate messaging;
+    private final TransactionTemplate transactions;
+    private final com.project.blackjack.domain.room.repository.RoomCodec codec;
+    private final com.project.blackjack.domain.game.repository.ReceiptRepository receipts;
+    private volatile boolean stopping;
+    @org.springframework.context.event.EventListener(org.springframework.context.event.ContextClosedEvent.class)
+    public void stopping() { stopping=true; }
+    private final ScheduledExecutorService timers = Executors.newScheduledThreadPool(2, r -> {
+        Thread t = new Thread(r, "blackjack-timer"); t.setDaemon(true); return t;
+    });
+    @PreDestroy public void close() { timers.shutdownNow(); }
+    private void require(boolean condition, String message) { if (!condition) throw new IllegalArgumentException(message); }
+    private Room room(String id) {
+        Room r = roomManager.findById(id);
+        require(r != null, "방을 찾을 수 없습니다."); return r;
     }
-
-    @Transactional
-    public void setupGame(String roomId) {
-        Room room = roomManager.findById(roomId);
-        if(room == null) throw new IllegalArgumentException("방을 찾을 수 없습니다.");
-
-        Deck deck = new Deck();
-        Dealer dealer = new Dealer();
-        dealer.initializeHand();
-
-        List<String> usernames = room.getSeats().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(Map.Entry::getValue)
-                .collect(Collectors.toList());
-
-        if (usernames.isEmpty()) {
-            throw new IllegalArgumentException("자리에 앉은 플레이어가 없습니다. (관전 상태)");
-        }
-
-        List<Player> gamePlayers = usernames.stream().map(name -> {
-            Member m = memberRepository.findByUsername(name).orElseThrow();
-            return new Player(m.getUsername(), m.getMoney());
-        }).collect(Collectors.toList());
-
-        BlackjackGame game = new BlackjackGame(deck, dealer, gamePlayers);
-        room.setGame(game);
-
-        game.setState(GameState.BETTING);
-        broadcastGameState(roomId, game);
-        long timerId = System.currentTimeMillis();
-        roomBettingTimestamps.put(roomId, timerId);
-        self.startBettingTimer(roomId, timerId);
-    }
-
-    @Transactional
-    public void startNextRound(String roomId) {
-        Room room = roomManager.findById(roomId);
-        if(room == null || room.getGame() == null) throw new IllegalArgumentException("진행 중인 게임이 없습니다.");
-
-        BlackjackGame game = room.getGame();
-        game.resetForNextRound();
-
-        List<Player> newPlayers = room.getSeats().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> {
-                    String name = entry.getValue();
-                    Member m = memberRepository.findByUsername(name).orElseThrow();
-                    return new Player(m.getUsername(), m.getMoney());
-                }).collect(Collectors.toList());
-
-        game.setPlayers(newPlayers);
-
-        game.setState(GameState.BETTING);
-        broadcastGameState(roomId, game);
-        long timerId = System.currentTimeMillis();
-        roomBettingTimestamps.put(roomId, timerId);
-        self.startBettingTimer(roomId, timerId);
-    }
-
-    @Transactional
-    public void placeBet(String roomId, String username, long betAmount) {
-        Room room = roomManager.findById(roomId);
-        if (room == null || room.getGame() == null) return;
-
-        BlackjackGame game = room.getGame();
-
-        if (game.getState() != GameState.BETTING) {
-            throw new IllegalStateException("지금은 배팅 시간이 아닙니다.");
-        }
-
-        game.getRoundBets().put(username, betAmount);
-
-        if (game.getRoundBets().size() == game.getPlayers().size()) {
-            self.executeDealing(roomId);
-        } else {
-            broadcastGameState(roomId, game);
-        }
-    }
-
-    @Async
-    public void startBettingTimer(String roomId, long timerId) {
-        try {
-            Thread.sleep(10000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        Long currentTimerId = roomBettingTimestamps.get(roomId);
-        if (currentTimerId != null && currentTimerId == timerId) {
-            self.executeDealing(roomId);
-        }
-    }
-
-    @Transactional
-    public void executeDealing(String roomId) {
-        Room room = roomManager.findById(roomId);
-        if (room == null || room.getGame() == null) return;
-
-        BlackjackGame game = room.getGame();
-        if (game.getState() != GameState.BETTING) return;
-
-        for (Player p : game.getPlayers()) {
-            Member m = memberRepository.findByUsername(p.getName()).orElseThrow();
-
-            long betAmount = game.getRoundBets().getOrDefault(p.getName(), room.getMinBet());
-
-            if (m.getMoney() < betAmount) {
-                betAmount = m.getMoney();
+    // Snapshot and wallet changes commit together. Restore memory on any rollback.
+    private void change(String id, Consumer<Room> operation) {
+        require(!stopping, "서버가 재시작 중입니다. 잠시 후 다시 시도해주세요.");
+        Room r=room(id);
+        synchronized(r) {
+            String before=codec.encode(r);
+            try {
+                transactions.executeWithoutResult(tx -> {
+                    operation.accept(r);
+                    if(r.getGame()!=null) r.getGame().setRevision(r.getGame().getRevision()+1);
+                    roomManager.persist(r);
+                });
+            } catch(RuntimeException ex) {
+                codec.restore(r,before); scheduleCommitted(r); throw ex;
             }
-
-            m.subtractMoney(betAmount);
-            p.setMoney(m.getMoney());
-            p.initializeHand(betAmount);
+            scheduleCommitted(r);
+            broadcast(r);
         }
-
-        game.setState(GameState.DEALING);
-        dealInitialCards(game.getPlayers(), game.getDealer(), game.getDeck());
-        evaluateNextStateAfterDealing(room);
-        broadcastGameState(roomId, game);
     }
-
-    private void dealInitialCards(List<Player> players, Dealer dealer, Deck deck) {
-        for(Player p : players) p.getHands().get(0).addCard(deck.draw());
-        dealer.getHand().addCard(deck.draw());
-
-        for(Player p : players) p.getHands().get(0).addCard(deck.draw());
-        dealer.getHand().addCard(deck.draw());
+    public void joinObserver(String id,String name) { change(id,r -> r.joinRoom(name)); }
+    public void resume(String id,String name) {
+        change(id,r -> {
+            require(r.isPaused() && r.getGame()!=null,"복구 대기 중인 게임이 아닙니다.");
+            require(r.getGame().getPlayers().stream().anyMatch(p -> p.getName().equals(name)) || r.getSeats().containsValue(name),"기존 참가자만 게임을 재개할 수 있습니다.");
+            r.setPaused(false);
+            long delay=switch(r.getGame().getState()) { case BETTING, INSURANCE -> 10000; case PLAYER_TURN -> 20000; case FINISHED -> 5000; case DEALER_TURN -> 1000; default -> 0; };
+            r.getGame().setDeadline(delay==0?0:System.currentTimeMillis()+delay);
+        });
     }
-
-    public void evaluateNextStateAfterDealing(Room room) {
-        BlackjackGame game = room.getGame();
-        Dealer dealer = game.getDealer();
-        Card upCard = dealer.getHand().getCards().get(0);
-
-        for (Player p : game.getPlayers()) {
-            for (Hand h : p.getHands()) {
-                if (h.calculateScore() == 21) {
-                    h.stand();
+    private Member member(String name) { return members.findByUsername(name).orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다.")); }
+    private BlackjackGame game(Room r, GameState expected) {
+        require(!r.isPaused(), "복구된 게임을 먼저 재개해주세요.");
+        require(r.getGame() != null && r.getGame().getState() == expected, "현재 단계에서 사용할 수 없는 요청입니다."); return r.getGame();
+    }
+    private Player player(BlackjackGame g, String name) {
+        return g.getPlayers().stream().filter(p -> p.getName().equals(name)).findFirst().orElseThrow(() -> new IllegalArgumentException("이번 라운드 참가자가 아닙니다."));
+    }
+    public void requireMember(String id, String name) { require(name != null && room(id).contains(name), "방에 먼저 입장해주세요."); }
+    public void sitDown(String id, String name, int seat) {
+        change(id, r -> {
+            require(r.contains(name), "방에 먼저 입장해주세요.");
+            require(member(name).getMoney() >= r.getMinBet(), "최소 베팅에 필요한 잔액이 부족합니다.");
+            require(r.takeSeat(name, seat), "유효하지 않거나 이미 사용 중인 자리입니다.");
+        });
+    }
+    public void setupGame(String id, String name) {
+        change(id, r -> {
+            require(r.getSeats().containsValue(name), "착석한 플레이어만 시작할 수 있습니다.");
+            require(r.getGame() == null || r.getGame().getState() == GameState.WAITING, "이미 진행 중인 게임입니다.");
+            if (r.getGame() == null) {
+                Dealer d = new Dealer(); d.initializeHand();
+                r.setGame(new BlackjackGame(new Deck(), d, new ArrayList<>()));
+            }
+            beginRound(r);
+        });
+    }
+    private void beginRound(Room r) {
+        BlackjackGame g = r.getGame(); r.setPaused(false); g.resetForNextRound(); g.setSettled(false); g.setRoundId(g.getRoundId() + 1);
+        List<Player> players = new ArrayList<>();
+        for (var entry : new TreeMap<>(r.getSeats()).entrySet()) {
+            Member m = member(entry.getValue());
+            if (m.getMoney() < r.getMinBet()) {
+                r.getSeats().remove(entry.getKey()); r.getObservers().add(m.getUsername());
+            } else players.add(new Player(m.getUsername(), m.getMoney()));
+        }
+        g.setPlayers(players);
+        if (players.isEmpty()) { g.setState(GameState.WAITING); g.setDeadline(0); return; }
+        g.setState(GameState.BETTING);
+        later(r, 10000, () -> deal(r));
+    }
+    // Set a durable deadline only; scheduling is performed after the DB commit.
+    private void later(Room r,long delay,Runnable ignored) { r.getGame().setDeadline(System.currentTimeMillis()+delay); }
+    private void scheduleCommitted(Room r) {
+        BlackjackGame g=r.getGame();
+        if(stopping || r.isPaused() || g==null || g.getDeadline()==0 || g.getState()==GameState.WAITING) return;
+        long revision=g.getRevision(), deadline=g.getDeadline();
+        timers.schedule(() -> {
+            try {
+                synchronized(r) {
+                    if(stopping || roomManager.findById(r.getRoomId())!=r || r.isPaused() || r.getGame()!=g || g.getRevision()!=revision || g.getDeadline()!=deadline) return;
+                    change(r.getRoomId(),this::timeout);
+                }
+            } catch(Exception e) { log.error("게임 타이머 처리 실패: {}",r.getRoomId(),e); }
+        },Math.max(1,deadline-System.currentTimeMillis()),TimeUnit.MILLISECONDS);
+    }
+    private void timeout(Room r) {
+        BlackjackGame g=r.getGame();
+        switch(g.getState()) {
+            case BETTING -> deal(r);
+            case INSURANCE -> { g.getPlayers().forEach(p -> g.getInsuranceDecisions().putIfAbsent(p.getName(),false));afterInsurance(r); }
+            case PLAYER_TURN -> { g.getCurrentPlayer().getHands().stream().filter(h -> h.getStatus()==HandStatus.PLAYING).findFirst().ifPresent(Hand::stand);advance(r); }
+            case DEALER_TURN -> dealerStep(r);
+            case FINISHED -> beginRound(r);
+            default -> g.setDeadline(0);
+        }
+    }
+    public void placeBet(String id, String name, long amount) {
+        change(id, r -> {
+            BlackjackGame g = game(r, GameState.BETTING); player(g, name);
+            require(amount >= r.getMinBet() && amount <= 1000000000L && amount % 100 == 0, "베팅은 최소 베팅 이상, 100 단위여야 합니다.");
+            require(amount <= member(name).getMoney(), "잔액이 부족합니다.");
+            require(!g.getRoundBets().containsKey(name), "이미 베팅했습니다.");
+            g.getRoundBets().put(name, amount);
+            if (g.getRoundBets().size() == g.getPlayers().size()) deal(r);
+        });
+    }
+    private void deal(Room r) {
+        BlackjackGame g = game(r, GameState.BETTING);
+        if (g.getPlayers().isEmpty()) { g.setState(GameState.WAITING); g.setDeadline(0); return; }
+        for (Player p : g.getPlayers()) {
+            long bet = g.getRoundBets().getOrDefault(p.getName(), r.getMinBet());
+            Member m = member(p.getName()); m.subtractMoney(bet); p.setMoney(m.getMoney()); p.initializeHand(bet);
+        }
+        for (int i = 0; i < 2; i++) {
+            for (Player p : g.getPlayers()) p.getHands().get(0).addCard(g.getDeck().draw());
+            g.getDealer().getHand().addCard(g.getDeck().draw());
+        }
+        for (Player p : g.getPlayers()) if (p.getHands().get(0).isNaturalBlackjack()) p.getHands().get(0).stand();
+        if (g.getDealer().getUpCard().getDenomination() == Denomination.ACE) {
+            g.setState(GameState.INSURANCE);
+            later(r, 10000, () -> { for (Player p : g.getPlayers()) g.getInsuranceDecisions().putIfAbsent(p.getName(), false); afterInsurance(r); });
+        } else if (g.getDealer().getHand().isNaturalBlackjack()) finish(r);
+        else { g.setState(GameState.PLAYER_TURN); advance(r); }
+    }
+    public void handleInsuranceChoice(String id, String name, boolean accept) {
+        change(id, r -> {
+            BlackjackGame g = game(r, GameState.INSURANCE); Player p = player(g, name);
+            require(!g.getInsuranceDecisions().containsKey(name), "이미 보험 선택을 완료했습니다.");
+            if (accept) {
+                Member m = member(name); m.subtractMoney(p.getHands().get(0).getBetAmount() / 2);
+                p.setMoney(m.getMoney()); p.setHasInsurance(true);
+            }
+            g.getInsuranceDecisions().put(name, accept);
+            if (g.getInsuranceDecisions().size() == g.getPlayers().size()) afterInsurance(r);
+        });
+    }
+    private void afterInsurance(Room r) {
+        if (r.getGame().getDealer().getHand().isNaturalBlackjack()) finish(r);
+        else { r.getGame().setState(GameState.PLAYER_TURN); advance(r); }
+    }
+    public void handlePlayerAction(String id, String name, PlayerAction action, int index, long revision) {
+        change(id, r -> {
+            BlackjackGame g = game(r, GameState.PLAYER_TURN);
+            require(g.getRevision() == revision, "게임 상태가 변경되었습니다. 다시 시도해주세요.");
+            Player p = g.getCurrentPlayer(); require(p != null && p.getName().equals(name), "본인의 차례가 아닙니다.");
+            int active = -1;
+            for (int i = 0; i < p.getHands().size(); i++) if (p.getHands().get(i).getStatus() == HandStatus.PLAYING) { active = i; break; }
+            require(index >= 0 && index == active && action != null, "진행 중인 패를 선택해주세요.");
+            Hand h = p.getHands().get(index); Member m = member(name);
+            switch(action) {
+                case HIT -> hit(g, h);
+                case STAND -> h.stand();
+                case DOUBLE_DOWN -> {
+                    require(h.getCards().size() == 2, "더블다운은 첫 두 장에서만 가능합니다.");
+                    m.subtractMoney(h.getBetAmount()); h.doubleDown(); hit(g, h);
+                    if (h.getStatus() != HandStatus.BUSTED) h.stand();
+                }
+                case SPLIT -> {
+                    require(h.canSplit() && p.getHands().size() < 4, "같은 숫자의 두 장만 최대 4패까지 스플릿할 수 있습니다.");
+                    m.subtractMoney(h.getBetAmount()); boolean aces = h.getCards().get(0).getDenomination() == Denomination.ACE;
+                    p.splitHand(index); Hand other = p.getHands().get(p.getHands().size() - 1);
+                    hit(g, h); hit(g, other);
+                    if (aces) { h.stand(); other.stand(); }
+                }
+                case SURRENDER -> {
+                    require(h.getCards().size() == 2 && !h.isSplit(), "서렌더는 스플릿 전 첫 두 장에서만 가능합니다.");
+                    h.surrender(); // Refund exactly once during final settlement.
                 }
             }
-        }
-
-        if(upCard.getDenomination() == Denomination.ACE) {
-            game.setState(GameState.INSURANCE);
-        } else if(upCard.getDenomination().getScore() == 10) {
-            game.setState(GameState.DEALER_PEEK);
-            checkDealerBlackjack(room);
-        } else {
-            game.setState(GameState.PLAYER_TURN);
-            checkAndProceedTurn(room);
-        }
+            p.setMoney(m.getMoney()); advance(r);
+        });
     }
-
-    private void checkDealerBlackjack(Room room) {
-        BlackjackGame game = room.getGame();
-        if(game.getDealer().getHand().calculateScore() == 21) {
-            game.setState(GameState.FINISHED);
-            settleGame(game);
-
-            broadcastGameState(room.getRoomId(), game);
-            self.scheduleNextRound(room.getRoomId());
-        } else {
-            game.setState(GameState.PLAYER_TURN);
-            checkAndProceedTurn(room);
-        }
+    private void hit(BlackjackGame g, Hand h) {
+        h.addCard(g.getDeck().draw());
+        if (h.calculateScore() > 21) h.bust(); else if (h.calculateScore() == 21) h.stand();
     }
-
-    @Transactional
-    public void handleInsuranceChoice(String roomId, String username, boolean accept) {
-        Room room = roomManager.findById(roomId);
-        if (room == null || room.getGame() == null) return;
-        BlackjackGame game = room.getGame();
-
-        if (game.getState() != GameState.INSURANCE) {
-            throw new IllegalStateException("지금은 보험을 가입하는 단계가 아닙니다.");
-        }
-
-        Player player = game.getPlayers().stream()
-                .filter(p -> p.getName().equals(username))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("게임을 진행 중인 유저가 아닙니다."));
-
-        if (accept) {
-            Member member = memberRepository.findByUsername(username).orElseThrow();
-            long insuranceBet = player.getHands().get(0).getBetAmount() / 2;
-            member.subtractMoney(insuranceBet);
-            player.setMoney(member.getMoney());
-            player.setHasInsurance(true);
-        }
-
-        game.getInsuranceDecisions().put(username, accept);
-
-        if (game.getInsuranceDecisions().size() == game.getPlayers().size()) {
-            proceedAfterInsurance(room);
-        } else {
-            broadcastGameState(roomId, game);
-        }
-    }
-
-    private void proceedAfterInsurance(Room room) {
-        BlackjackGame game = room.getGame();
-        Dealer dealer = game.getDealer();
-
-        boolean isDealerBlackjack = dealer.getHand().calculateScore() == 21 && dealer.getHand().getCards().size() == 2;
-
-        if (isDealerBlackjack) {
-            game.setState(GameState.FINISHED);
-            settleInsurance(game);
-            calculateFinalSettlement(game);
-            broadcastGameState(room.getRoomId(), game);
-
-            self.scheduleNextRound(room.getRoomId());
-        } else {
-            game.setState(GameState.PLAYER_TURN);
-            checkAndProceedTurn(room);
-        }
-    }
-
-    private void settleInsurance(BlackjackGame game) {
-        for(Player player : game.getPlayers()) {
-            if(player.isHasInsurance()) {
-                Member member = memberRepository.findByUsername(player.getName()).orElseThrow();
-                long originalBet = player.getHands().get(0).getBetAmount();
-                member.addMoney(originalBet);
-                player.setMoney(member.getMoney());
-            }
-        }
-    }
-
-    @Transactional
-    public void handlePlayerAction(String roomId, String username, PlayerAction action, int handIndex) {
-        Room room = roomManager.findById(roomId);
-        BlackjackGame game = room.getGame();
-        Player currentPlayer = game.getCurrentPlayer();
-        Hand targetHand = currentPlayer.getHands().get(handIndex);
-        Member member = memberRepository.findByUsername(username).orElseThrow();
-
-        switch (action) {
-            case HIT:
-                targetHand.addCard(game.getDeck().draw());
-                if(targetHand.calculateScore() > 21) targetHand.bust();
-                else if(targetHand.calculateScore() == 21) targetHand.stand();
-                break;
-
-            case STAND:
-                targetHand.stand();
-                break;
-
-            case DOUBLE_DOWN:
-                long doubleBet = targetHand.getBetAmount();
-                member.subtractMoney(doubleBet);
-                currentPlayer.setMoney(member.getMoney());
-                currentPlayer.doubleDownHand(handIndex);
-                targetHand.addCard(game.getDeck().draw());
-                if(targetHand.calculateScore() > 21) targetHand.bust();
-                else targetHand.stand();
-                break;
-
-            case SPLIT:
-                long splitBet = targetHand.getBetAmount();
-                member.subtractMoney(splitBet);
-                currentPlayer.setMoney(member.getMoney());
-                currentPlayer.splitHand(handIndex);
-                currentPlayer.getHands().get(handIndex).addCard(game.getDeck().draw());
-                currentPlayer.getHands().get(currentPlayer.getHands().size() - 1).addCard(game.getDeck().draw());
-                break;
-
-            case SURRENDER:
-                targetHand.surrender();
-                member.addMoney(targetHand.getBetAmount() / 2);
-                currentPlayer.setMoney(member.getMoney());
-                break;
-        }
-
-        checkAndProceedTurn(room);
-    }
-
-    private void checkAndProceedTurn(Room room) {
-        BlackjackGame game = room.getGame();
-
-        while (game.getCurrentPlayerIndex() < game.getPlayers().size()) {
-            Player currentPlayer = game.getCurrentPlayer();
-            boolean allHandsFinished = currentPlayer.getHands().stream()
-                    .allMatch(h -> h.getStatus() != HandStatus.PLAYING);
-
-            if (allHandsFinished) {
-                game.setCurrentPlayerIndex(game.getCurrentPlayerIndex() + 1);
-            } else {
-                return;
-            }
-        }
-
-        boolean requiresDealerTurn = game.getPlayers().stream()
-                .flatMap(p -> p.getHands().stream())
-                .anyMatch(h -> h.getStatus() == HandStatus.STOOD && !(h.calculateScore() == 21 && h.getCards().size() == 2));
-
-        if (!requiresDealerTurn) {
-            game.setState(GameState.FINISHED);
-            calculateFinalSettlement(game);
-            broadcastGameState(room.getRoomId(), game);
-            self.scheduleNextRound(room.getRoomId());
-        } else {
-            game.setState(GameState.DEALER_TURN);
-            self.playDealerTurn(room.getRoomId());
-        }
-    }
-
-    @Transactional
-    @Async
-    public void playDealerTurn(String roomId) {
-        Room room = roomManager.findById(roomId);
-        BlackjackGame game = room.getGame();
-        Dealer dealer = game.getDealer();
-        Deck deck = game.getDeck();
-        Hand dealerHand = dealer.getHand();
-
-        try {
-            broadcastGameState(roomId, game);
-            Thread.sleep(1500);
-
-            while (dealerHand.calculateScore() <= 16) {
-                dealerHand.addCard(deck.draw());
-                broadcastGameState(roomId, game);
-                Thread.sleep(1500);
-            }
-
-            game.setState(GameState.FINISHED);
-            calculateFinalSettlement(game);
-            broadcastGameState(roomId, game);
-
-            self.scheduleNextRound(roomId);
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private void broadcastGameState(String roomId, BlackjackGame game) {
-        Room room = roomManager.findById(roomId);
-        Map<Integer, String> currentSeats = (room != null) ? room.getSeats() : null;
-
-        GameStatusResponse response = new GameStatusResponse(roomId, game, currentSeats);
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, response);
-    }
-
-    private void calculateFinalSettlement(BlackjackGame game) {
-        int dealerScore = game.getDealer().getHand().calculateScore();
-        boolean isDealerBust = dealerScore > 21;
-        boolean isDealerBlackjack = dealerScore == 21 && game.getDealer().getHand().getCards().size() == 2;
-
-        for(Player player : game.getPlayers()) {
-            Member member = memberRepository.findByUsername(player.getName()).orElseThrow();
-
-            for(Hand hand : player.getHands()) {
-                HandStatus status = hand.getStatus();
-                if(status == HandStatus.BUSTED || status == HandStatus.SURRENDERED) continue;
-
-                long betAmount = hand.getBetAmount();
-                int playerScore = hand.calculateScore();
-                boolean isPlayerBlackjack = playerScore == 21 && hand.getCards().size() == 2;
-
-                if (isPlayerBlackjack) {
-                    if (isDealerBlackjack) {
-                        member.addMoney(betAmount);
-                    } else {
-                        member.addMoney(betAmount + (long)(betAmount * 1.5));
-                    }
-                } else if (isDealerBust) {
-                    member.addMoney(betAmount * 2);
-                } else {
-                    if (playerScore > dealerScore) {
-                        member.addMoney(betAmount * 2);
-                    } else if (playerScore == dealerScore) {
-                        member.addMoney(betAmount);
-                    }
-                }
-            }
-            player.setMoney(member.getMoney());
-        }
-    }
-
-    @Async
-    public void scheduleNextRound(String roomId) {
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        Room room = roomManager.findById(roomId);
-        if (room != null && room.getGame() != null) {
-            if (!room.getSeats().isEmpty()) {
-                self.startNextRound(roomId);
-            } else {
-                room.getGame().setState(GameState.WAITING);
-                broadcastGameState(roomId, room.getGame());
-            }
-        }
-    }
-
-    @Transactional
-    public void handlePlayerLeave(String roomId, String username) {
-        Room room = roomManager.findById(roomId);
-        if(room == null || room.getGame() == null) return;
-
-        BlackjackGame game = room.getGame();
-
-        if(game.getState() == GameState.WAITING || game.getState() == GameState.FINISHED) return;
-
-        if(game.getState() == GameState.BETTING) {
-            game.getRoundBets().remove(username);
-            if(!game.getPlayers().isEmpty() && game.getRoundBets().size() == room.getSeats().size() - 1) {
-                self.executeDealing(roomId);
-            }
+    private void advance(Room r) {
+        BlackjackGame g = r.getGame();
+        while (g.getCurrentPlayer() != null && g.getCurrentPlayer().getHands().stream().noneMatch(h -> h.getStatus() == HandStatus.PLAYING))
+            g.setCurrentPlayerIndex(g.getCurrentPlayerIndex() + 1);
+        if (g.getCurrentPlayer() != null) {
+            later(r, 20000, () -> {
+                Player p = g.getCurrentPlayer();
+                p.getHands().stream().filter(h -> h.getStatus() == HandStatus.PLAYING).findFirst().ifPresent(Hand::stand);
+                advance(r);
+            });
             return;
         }
-
-        Player targetPlayer = game.getPlayers().stream()
-                .filter(p -> p.getName().equals(username))
-                .findFirst()
-                .orElse(null);
-
-        if(targetPlayer != null) {
-            for(Hand hand : targetPlayer.getHands()) {
-                if(hand.getStatus() == HandStatus.PLAYING) {
-                    hand.bust();
-                }
+        boolean needsDealer = g.getPlayers().stream().flatMap(p -> p.getHands().stream()).anyMatch(h -> h.getStatus() == HandStatus.STOOD && !h.isNaturalBlackjack());
+        if (!needsDealer) { finish(r); return; }
+        g.setState(GameState.DEALER_TURN); later(r, 1000, () -> dealerStep(r));
+    }
+    private void dealerStep(Room r) {
+        BlackjackGame g = r.getGame();
+        if (g.getDealer().mustHit()) { g.getDealer().getHand().addCard(g.getDeck().draw()); later(r, 1000, () -> dealerStep(r)); }
+        else finish(r);
+    }
+    private void finish(Room r) {
+        BlackjackGame g = r.getGame(); if (g.isSettled()) return;
+        Hand dealer = g.getDealer().getHand(); int score = dealer.calculateScore(); boolean bj = dealer.isNaturalBlackjack();
+        for (Player p : g.getPlayers()) {
+            Member m = member(p.getName());
+            if (p.isHasInsurance() && bj) m.addMoney(p.getHands().get(0).getBetAmount() / 2 * 3);
+            for (Hand h : p.getHands()) {
+                long payout = 0; String result = "LOSE";
+                if (h.getStatus() == HandStatus.SURRENDERED) { payout = h.getBetAmount() / 2; result = "SURRENDER"; }
+                else if (h.getStatus() == HandStatus.BUSTED) result = "BUST";
+                else if (h.isNaturalBlackjack()) { payout = bj ? h.getBetAmount() : h.getBetAmount() * 5 / 2; result = bj ? "PUSH" : "BLACKJACK"; }
+                else if (!bj && (score > 21 || h.calculateScore() > score)) { payout = h.getBetAmount() * 2; result = "WIN"; }
+                else if (!bj && h.calculateScore() == score) { payout = h.getBetAmount(); result = "PUSH"; }
+                h.setResult(result); h.setPayout(payout); m.addMoney(payout);
             }
-
-            checkAndProceedTurn(room);
+            p.setMoney(m.getMoney());
+            long stake=p.getHands().stream().mapToLong(Hand::getBetAmount).sum()+(p.isHasInsurance()?g.getRoundBets().getOrDefault(p.getName(),r.getMinBet())/2:0);
+            long paid=p.getHands().stream().mapToLong(Hand::getPayout).sum()+(p.isHasInsurance()&&bj?g.getRoundBets().getOrDefault(p.getName(),r.getMinBet())/2*3:0);
+            receipts.save(new com.project.blackjack.domain.game.repository.RoundReceipt(r.getRoomId(),g.getRoundId(),p.getName(),stake,paid,m.getMoney()));
         }
+        g.setSettled(true); g.setState(GameState.FINISHED);
+        later(r, 5000, () -> beginRound(r));
     }
-
-    public void syncGameState(String roomId) {
-        Room room = roomManager.findById(roomId);
-        if (room != null) {
-            broadcastGameState(roomId, room.getGame());
-        }
+    public void handlePlayerLeave(String id, String name) {
+        change(id, r -> {
+            r.leaveRoom(name); BlackjackGame g = r.getGame(); if (g == null) return;
+            boolean wasPaused=r.isPaused(); r.setPaused(false);
+            if (g.getState() == GameState.BETTING) {
+                g.getPlayers().removeIf(p -> p.getName().equals(name)); g.getRoundBets().remove(name);
+                if (g.getPlayers().isEmpty() || g.getRoundBets().size() == g.getPlayers().size()) deal(r);
+            } else if (g.getState() == GameState.INSURANCE || g.getState() == GameState.PLAYER_TURN) {
+                if (g.getPlayers().stream().noneMatch(p -> p.getName().equals(name))) { r.setPaused(wasPaused); return; }
+                g.getPlayers().stream().filter(p -> p.getName().equals(name)).forEach(p -> p.getHands().stream().filter(h -> h.getStatus() == HandStatus.PLAYING).forEach(Hand::stand));
+                if (g.getState() == GameState.INSURANCE) {
+                    g.getInsuranceDecisions().putIfAbsent(name, false);
+                    if (g.getInsuranceDecisions().size() == g.getPlayers().size()) afterInsurance(r);
+                } else advance(r);
+            }
+            if (r.getTotalPlayerCount() == 0 && !g.isSettled() && g.getState() != GameState.WAITING && g.getState() != GameState.BETTING) {
+                while (!g.getDealer().getHand().isNaturalBlackjack() && g.getDealer().mustHit()) g.getDealer().getHand().addCard(g.getDeck().draw());
+                finish(r);
+            }
+            if(wasPaused && r.getTotalPlayerCount()>0) r.setPaused(true);
+        });
     }
-
-    private void settleGame(BlackjackGame game) {
-        calculateFinalSettlement(game);
+    public void syncGameState(String id) { Room r = room(id); synchronized(r) { broadcast(r); } }
+    private void broadcast(Room r) {
+        GameStatusResponse response = new GameStatusResponse(r.getRoomId(), r.getGame(), r.getSeats());
+        response.setPaused(r.isPaused()); response.setTitle(r.getTitle());
+        response.setMinBet(r.getMinBet()); response.setMaxPlayers(r.getMaxPlayers());
+        messaging.convertAndSend("/topic/room/" + r.getRoomId(), response);
     }
 }
