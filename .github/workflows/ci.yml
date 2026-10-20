@@ -1,0 +1,62 @@
+name: Verify blackjack
+on:
+  push:
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/frontend-blackjack/package-lock.json
+      - name: Backend tests and package
+        working-directory: blackjack
+        run: |
+          chmod +x gradlew
+          ./gradlew test bootJar --no-daemon
+      - name: Frontend checks
+        working-directory: frontend/frontend-blackjack
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+          npm audit --omit=dev
+      - name: Forced restart persistence integration
+        working-directory: frontend/frontend-blackjack
+        run: node scripts/restart-smoke.mjs
+      - name: Start Compose integration environment
+        env:
+          DOMAIN: localhost
+        run: |
+          python3 deploy/generate-secrets.py
+          docker compose -p blackjack-verify -f compose.yml -f compose.local.yml up -d --build
+      - name: MariaDB recovery and authorization integration
+        working-directory: frontend/frontend-blackjack
+        env:
+          COMPOSE_TEST: '1'
+          API_URL: http://localhost:18081
+        run: |
+          node scripts/restart-smoke.mjs
+          node scripts/smoke.mjs
+          node scripts/chat-smoke.mjs
+          node scripts/security-smoke.mjs
+      - name: Deployment script syntax
+        run: |
+          bash -n deploy/release.sh
+          bash deploy/test-release.sh
+      - name: Stop Compose integration environment
+        if: always()
+        env:
+          DOMAIN: localhost
+        run: docker compose -p blackjack-verify -f compose.yml -f compose.local.yml down

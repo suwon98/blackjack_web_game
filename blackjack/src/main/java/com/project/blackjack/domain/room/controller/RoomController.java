@@ -18,8 +18,8 @@ public class RoomController {
     private final RoomService roomService;
 
     @GetMapping
-    public ResponseEntity<List<RoomResponse>> getRooms() {
-        return ResponseEntity.ok(roomService.getRoomList());
+    public ResponseEntity<List<RoomResponse>> getRooms(Authentication authentication) {
+        return ResponseEntity.ok(roomService.getRoomList(authentication.getName()));
     }
 
     @PostMapping
@@ -33,10 +33,10 @@ public class RoomController {
     @PostMapping("/{roomId}/enter")
     public ResponseEntity<RoomResponse> enterRoom(
             @PathVariable String roomId,
-            @RequestParam(required = false) String inviteCode,
+            @RequestBody(required = false) com.project.blackjack.domain.room.dto.RoomJoinRequest request,
             Authentication authentication) {
         String username = authentication.getName();
-        return ResponseEntity.ok(roomService.joinRoom(roomId, username, inviteCode));
+        return ResponseEntity.ok(roomService.joinRoom(roomId, username, request == null ? null : request.getInviteCode()));
     }
 
     @PostMapping("/{roomId}/leave")

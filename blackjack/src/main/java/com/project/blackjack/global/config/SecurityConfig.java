@@ -26,7 +26,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    @org.springframework.beans.factory.annotation.Value("${app.oauth-enabled:false}")
+    private boolean oauthEnabled;
+    @org.springframework.beans.factory.annotation.Value("${app.frontend-url}")
+    private String frontendUrl;
     private final JwtTokenProvider jwtTokenProvider;
+    private final com.project.blackjack.global.security.RefreshTokenStore sessions;
     private final CustomOAuth2UserService customOAuth2UserService;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
@@ -46,24 +51,24 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/members/join", "/api/members/login", "/api/members/reissue",
-                                "/ws-blackjack/**", "/api/rooms", "/login/**", "/oauth2/**").permitAll()
+                                "/actuator/health", "/actuator/health/**", "/ws-blackjack/**", "/login/**", "/oauth2/**").permitAll()
                         .anyRequest().authenticated()
                 )
 
-                .oauth2Login(oauth2 -> oauth2
-                        .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
-                        .successHandler(oAuth2SuccessHandler)
-                )
+                .exceptionHandling(errors -> errors.authenticationEntryPoint((req, res, ex) -> res.sendError(401)))
 
-                .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
+                .headers(headers -> headers.frameOptions(frame -> frame.deny()).contentTypeOptions(org.springframework.security.config.Customizer.withDefaults()).referrerPolicy(ref -> ref.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)))
+                .addFilterBefore(new com.project.blackjack.global.security.RequestLimits(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider,sessions), UsernamePasswordAuthenticationFilter.class);
 
+        if (oauthEnabled) http.oauth2Login(oauth -> oauth.userInfoEndpoint(info -> info.userService(customOAuth2UserService)).successHandler(oAuth2SuccessHandler));
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:5173", "http://localhost:8080"));
+        configuration.setAllowedOriginPatterns(List.of(frontendUrl));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

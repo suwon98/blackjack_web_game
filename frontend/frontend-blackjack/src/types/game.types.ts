@@ -33,6 +33,10 @@ export interface HandDto {
   betAmount: number;
   score: number;
   status: HandStatus;
+  naturalBlackjack: boolean;
+  canSplit: boolean;
+  result: string | null;
+  payout: number;
 }
 
 export interface PlayerDto {
@@ -49,10 +53,20 @@ export interface DealerDto {
 
 export interface GameStatusResponse {
   roomId: string;
+  paused: boolean;
+  title: string;
+  serverTime: number;
   state: GameState;
-  dealer: DealerDto;
+  dealer: DealerDto | null;
+  revision: number;
+  deadline: number;
+  roundId: number;
+  minBet: number;
+  maxPlayers: number;
+  bets: Record<string, number>;
+  insuranceDecisions: Record<string, boolean>;
   players: PlayerDto[];
-  seats?: Record<number, string>;
-  currentPlayerIndex: number | null;
+  seats: Record<number, string>;
+  currentPlayerIndex: number;
   remainingCards?: number; 
 }

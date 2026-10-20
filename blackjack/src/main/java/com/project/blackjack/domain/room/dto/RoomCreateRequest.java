@@ -8,6 +8,7 @@ import lombok.Setter;
 public class RoomCreateRequest {
     private String title;
     private int maxPlayers;
+    @com.fasterxml.jackson.annotation.JsonProperty("isPrivate")
     private boolean isPrivate;
     private String inviteCode;
     private long minBet;

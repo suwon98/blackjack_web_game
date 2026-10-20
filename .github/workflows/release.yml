@@ -1,0 +1,97 @@
+name: Build and deliver
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the verified images to the configured instance
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: blackjack-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+  images:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "prefix=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Publish backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.prefix }}/backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Publish web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.prefix }}/web:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+  deploy:
+    if: inputs.deploy && github.ref == 'refs/heads/main'
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Deliver release through Systems Manager
+        env:
+          INSTANCE_ID: ${{ vars.AWS_INSTANCE_ID }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]]
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          jq -n --arg command "/opt/blackjack/deploy/release.sh $RELEASE_SHA" \
+            '{commands:[$command],executionTimeout:["900"]}' > parameters.json
+          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript --parameters file://parameters.json \
+            --timeout-seconds 120 --query Command.CommandId --output text)
+          echo "SSM command: $command_id"
+          for _ in $(seq 1 100); do
+            status=$(aws ssm get-command-invocation --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)
+            case "$status" in
+              Success) echo "Release healthy: $RELEASE_SHA"; exit 0 ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "SSM result timed out. Check the command before trying another release."
+          exit 1

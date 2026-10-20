@@ -16,6 +16,9 @@ public class Member extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    private Long version;
+
     @Column(unique = true, length = 50)
     private String username;
 
@@ -47,10 +50,12 @@ public class Member extends BaseTimeEntity {
     }
 
     public void addMoney(Long amount) {
-        this.money += amount;
+        if (amount == null || amount < 0) throw new IllegalArgumentException("금액은 음수일 수 없습니다.");
+        this.money = Math.addExact(this.money, amount);
     }
 
     public void subtractMoney(Long amount) {
+        if (amount == null || amount < 0) throw new IllegalArgumentException("금액은 음수일 수 없습니다.");
         if(this.money < amount) {
             throw new IllegalArgumentException("소지금이 부족합니다.");
         }

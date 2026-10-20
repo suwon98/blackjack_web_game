@@ -1,0 +1,56 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: blackjack
+      MARIADB_USER: blackjack
+      MARIADB_PASSWORD_FILE: /run/secrets/db-password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db-root-password
+    secrets: [db-password, db-root-password]
+    volumes: [database:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 768m
+  backend:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to your public hostname}
+    secrets: [db-password, jwt-secret]
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    stop_grace_period: 30s
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to your public hostname}
+    ports: ["80:80", "443:443"]
+    volumes: [caddy-data:/data, caddy-config:/config]
+    depends_on: [backend]
+    mem_limit: 256m
+secrets:
+  db-password:
+    file: ./deploy/secrets/db-password
+  db-root-password:
+    file: ./deploy/secrets/db-root-password
+  jwt-secret:
+    file: ./deploy/secrets/jwt-secret
+volumes:
+  database:
+  caddy-data:
+  caddy-config:

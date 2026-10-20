@@ -20,6 +20,8 @@ export interface RoomListResponse {
   isPrivate: boolean;
   minBet: number;
   isPlaying: boolean;
+  joined: boolean;
+  paused: boolean;
 }
 
 export const getRooms = () => {

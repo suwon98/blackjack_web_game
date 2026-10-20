@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:blackjack-test;MODE=MariaDB;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+jwt:
+  secret: YmxhY2tqYWNrLXRlc3Qta2V5LW9ubHktbm90LXByb2R1Y3Rpb24=

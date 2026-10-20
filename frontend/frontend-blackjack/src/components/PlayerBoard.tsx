@@ -10,36 +10,16 @@ interface PlayerBoardProps {
   dealerScore: number;
 }
 
-const PlayerBoard: React.FC<PlayerBoardProps> = ({player, isMe, isCurrentTurn, gameState, dealerScore}) => {
+const PlayerBoard: React.FC<PlayerBoardProps> = ({player, isMe, isCurrentTurn, gameState}) => {
   
-  const getHandResult = (handScore: number, handStatus: string, cardCount: number) => {
-    if (gameState !== 'FINISHED') return null;
-    if (handStatus === 'BUSTED') return { text: 'BUST', color: 'gray' };
-    if (handStatus === 'SURRENDERED') return { text: 'SURRENDER', color: 'gray' };
-    
-    const isPlayerBJ = handScore === 21 && cardCount === 2;
-    const isDealerBJ = dealerScore === 21; 
-    
-    if (isPlayerBJ) {
-      if (isDealerBJ) return { text: 'PUSH', color: 'push' }; 
-      return { text: 'BLACKJACK!', color: 'win' }; 
-    }
-
-    if (dealerScore > 21) return { text: 'WIN!', color: 'win' };
-    if (handScore > dealerScore) return { text: 'WIN!', color: 'win' };
-    if (handScore === dealerScore) return { text: 'PUSH', color: 'push' };
-    if (handScore < dealerScore) return { text: 'LOSE', color: 'lose' };
-    return null;
-  };
-
   const activeHandIndex = player.hands.findIndex(h => h.status === 'PLAYING');
 
   return (
     <div className={`player-board-clean ${isCurrentTurn ? 'active-turn' : ''} ${isMe ? 'is-me' : ''}`}>
       <div className="hands-wrapper">
         {player.hands.map((hand, handIdx) => {
-          const isBlackjack = hand.score === 21 && hand.cards.length === 2;
-          const result = getHandResult(hand.score, hand.status, hand.cards.length);
+          const isBlackjack = hand.naturalBlackjack;
+          const result = gameState === 'FINISHED' && hand.result ? { text: hand.result, color: ['WIN', 'BLACKJACK'].includes(hand.result) ? 'win' : hand.result === 'PUSH' ? 'push' : 'lose' } : null;
           
           const isPlayingThisHand = isCurrentTurn && handIdx === activeHandIndex;
 

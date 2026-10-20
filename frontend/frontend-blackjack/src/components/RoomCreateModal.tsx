@@ -10,6 +10,7 @@ interface RoomCreateModalProps {
 }
 
 const RoomCreateModal: React.FC<RoomCreateModalProps> = ({ isOpen, onClose, onSuccess }) => {
+  const [error, setError] = useState('');
   const [title, setTitle] = useState('');
   const [maxPlayers, setMaxPlayers] = useState<number | string>(6); 
   const [isPrivate, setIsPrivate] = useState(false);
@@ -31,19 +32,19 @@ const RoomCreateModal: React.FC<RoomCreateModalProps> = ({ isOpen, onClose, onSu
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      alert('방 제목을 입력해주세요.');
+      setError('방 제목을 입력해주세요.');
       return;
     }
 
     const parsedMaxPlayers = Number(maxPlayers);
     if (!parsedMaxPlayers || parsedMaxPlayers < 1 || parsedMaxPlayers > 6) {
-      alert('인원수는 1명에서 6명 사이여야 합니다.');
+      setError('인원수는 1명에서 6명 사이여야 합니다.');
       return;
     }
 
     const parsedMinBet = Number(minBet);
     if (!parsedMinBet || parsedMinBet < 100) {
-      alert('최소 배팅금은 100원 이상이어야 합니다.');
+      setError('최소 베팅은 100 칩 이상이어야 합니다.');
       return;
     }
 
@@ -60,9 +61,9 @@ const RoomCreateModal: React.FC<RoomCreateModalProps> = ({ isOpen, onClose, onSu
       onSuccess(response.data.roomId);
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        alert(error.response?.data?.message || '방 생성에 실패했습니다.');
+        setError(error.response?.data?.message || '방 생성에 실패했습니다.');
       } else {
-        alert('예기치 않은 오류가 발생했습니다.');
+        setError('예기치 않은 오류가 발생했습니다.');
       }
     }
   };
@@ -71,15 +72,16 @@ const RoomCreateModal: React.FC<RoomCreateModalProps> = ({ isOpen, onClose, onSu
     <div className="modal-overlay">
       <div className="modal-content">
         <h2>방 만들기</h2>
+        {error && <p role="alert">{error}</p>}
         <form onSubmit={handleSubmit} className="modal-form">
           <div>
-            <label>방 제목:</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="modal-input" />
+            <label htmlFor="room-title">방 제목:</label>
+            <input id="room-title" maxLength={60} required autoFocus type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="modal-input" />
           </div>
           <div>
-            <label>최대 인원 (1~6명):</label>
+            <label htmlFor="room-capacity">최대 인원 (1~6명):</label>
             <input 
-              type="number" 
+              id="room-capacity" type="number" 
               min="1" 
               max="6" 
               value={maxPlayers} 
@@ -88,9 +90,9 @@ const RoomCreateModal: React.FC<RoomCreateModalProps> = ({ isOpen, onClose, onSu
             />
           </div>
           <div>
-            <label>최소 배팅금:</label>
+            <label htmlFor="room-bet">최소 배팅금:</label>
             <input 
-              type="number" 
+              id="room-bet" type="number" max="1000000"
               min="100" 
               step="100" 
               value={minBet} 
@@ -106,8 +108,8 @@ const RoomCreateModal: React.FC<RoomCreateModalProps> = ({ isOpen, onClose, onSu
           </div>
           {isPrivate && (
             <div>
-              <label>초대 코드 (비밀번호):</label>
-              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} className="modal-input" disabled={!isPrivate} />
+              <label htmlFor="room-invite">초대 코드 (비밀번호):</label>
+              <input id="room-invite" type="password" maxLength={72} required value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} className="modal-input" disabled={!isPrivate} />
             </div>
           )}
           <div className="modal-actions">
