@@ -30,6 +30,7 @@ jobs:
         run: |
           npm ci
           npm run lint
+          npm test
           npm run build
           npm audit --omit=dev
       - name: Forced restart persistence integration

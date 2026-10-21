@@ -6,6 +6,7 @@ import DealerBoard from '../components/DealerBoard';
 import PlayerBoard from '../components/PlayerBoard';
 import ActionButtons from '../components/ActionButtons';
 import ChatPanel from '../components/ChatPanel';
+import { addBet, maximumBet } from '../utils/betting';
 import '../styles/GamePage.css';
 import '../styles/Board.css';
 
@@ -68,15 +69,12 @@ const GamePage: React.FC = () => {
 
   const handleAddChip = (amount: number) => {
     if (!myPlayerInfo) return;
-    setBetAmount(prev => {
-      const nextAmount = prev + amount;
-      return nextAmount > myPlayerInfo.money ? myPlayerInfo.money : nextAmount;
-    });
+    setBetAmount(prev => addBet(prev, amount, myPlayerInfo.money));
   };
 
   const handleAllIn = () => {
     if (!myPlayerInfo) return;
-    setBetAmount(myPlayerInfo.money);
+    setBetAmount(maximumBet(myPlayerInfo.money));
   };
 
   const handleResetBet = () => {
@@ -149,6 +147,7 @@ const GamePage: React.FC = () => {
                   <div className="current-bet-display">
                     최소 베팅: {gameData?.minBet.toLocaleString()} | 현재 베팅액: <span>{betAmount.toLocaleString()}</span> 칩
                     <div className="my-money-info">(내 칩: {myPlayerInfo.money.toLocaleString()} 칩)</div>
+                    <div className="my-money-info">베팅은 100칩 단위입니다. MAX는 베팅 가능한 최대 금액을 선택합니다.</div>
                   </div>
                   <div className="chip-buttons">
                     <button className="chip-btn chip-1k" onClick={() => handleAddChip(100)}>100</button>
