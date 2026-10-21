@@ -75,12 +75,23 @@ class GameServiceTests {
         } finally { org.mockito.Mockito.doCallRealMethod().when(rooms).persist(org.mockito.ArgumentMatchers.any(Room.class)); }
     }
     @Autowired com.project.blackjack.domain.game.repository.ReceiptRepository receipts;
+    com.project.blackjack.domain.game.repository.RoundReceipt awaitSettlement() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            synchronized (room) {
+                var saved = receipts.findTop20ByUsernameOrderByCreatedAtDesc(user);
+                if (!saved.isEmpty()) {
+                    return saved.get(0);
+                }
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("No committed settlement receipt within 10 seconds");
+    }
     @Test void insuranceReceiptUsesOriginalBetAfterDoubleDown() throws Exception {
         deck(Denomination.TWO,Denomination.ACE,Denomination.THREE,Denomination.NINE,Denomination.TWO);
         bet();games.handleInsuranceChoice(room.getRoomId(),user,true);action(PlayerAction.DOUBLE_DOWN);
-        long until=System.currentTimeMillis()+4000;
-        while(receipts.findTop20ByUsernameOrderByCreatedAtDesc(user).isEmpty() && System.currentTimeMillis()<until) Thread.sleep(20);
-        var receipt=receipts.findTop20ByUsernameOrderByCreatedAtDesc(user).get(0);
+        var receipt = awaitSettlement();
         assertEquals(2500,receipt.getStake());assertEquals(97500,receipt.getBalance());
     }
     @Test void invalidBetsNeverChangeMoney() {
@@ -153,13 +164,21 @@ class GameServiceTests {
         assertEquals(GameState.FINISHED, room.getGame().getState()); assertEquals(101000, money());
         assertNull(rooms.findById(room.getRoomId()));
     }
-    @Test void doubleDownChargesOnceAndSettlesAtDoubleStake() throws Exception {
+    @RepeatedTest(5) void doubleDownChargesOnceAndSettlesAtDoubleStake() throws Exception {
         deck(Denomination.FIVE, Denomination.TEN, Denomination.SIX, Denomination.SEVEN, Denomination.KING);
-        bet(); action(PlayerAction.DOUBLE_DOWN);
-        assertEquals(98000, money());
-        long deadline = System.currentTimeMillis() + 4000;
-        while (room.getGame().getState() != GameState.FINISHED && System.currentTimeMillis() < deadline) Thread.sleep(25);
-        assertEquals(GameState.FINISHED, room.getGame().getState()); assertEquals(102000, money());
+        synchronized (room) {
+            bet(); action(PlayerAction.DOUBLE_DOWN);
+            assertEquals(98000, money());
+            assertEquals(2000, room.getGame().getPlayers().get(0).getHands().get(0).getBetAmount());
+            assertThrows(IllegalArgumentException.class, () -> action(PlayerAction.DOUBLE_DOWN));
+            assertEquals(98000, money());
+        }
+        var receipt = awaitSettlement();
+        assertEquals(2000, receipt.getStake());
+        assertEquals(4000, receipt.getPayout());
+        assertEquals(102000, receipt.getBalance());
+        assertEquals(102000, money());
+        assertEquals(1, receipts.findTop20ByUsernameOrderByCreatedAtDesc(user).size());
     }
     @Test void duplicateInsuranceChoiceCannotChargeTwice() {
         String other = "u" + UUID.randomUUID().toString().substring(0, 8);
