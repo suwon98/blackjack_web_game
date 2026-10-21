@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { maximumBet, addBet } from '../src/utils/betting.ts';
+import { maximumBet, addBet, normalizeBet } from '../src/utils/betting.ts';
 
 test('MAX preserves the 50-chip remainder after a 1,100-chip surrender', () => {
   const balance = 97_400 - 1_100 + 550;
@@ -37,4 +37,15 @@ test('selecting MAX does not round the wallet balance itself', () => {
   const wallet = { balance: 96_850 };
   maximumBet(wallet.balance);
   assert.equal(wallet.balance, 96_850);
+});
+
+test('subtracting chips clamps at zero and supports correcting a mistaken click', () => {
+  assert.equal(addBet(addBet(1000, 10000, 99450), -10000, 99450), 1000);
+  assert.equal(addBet(1000, -100000, 99450), 0);
+  assert.equal(addBet(maximumBet(99450), -100, 99450), 99300);
+});
+test('direct input stays inside the wallet and uses whole betting units', () => {
+  assert.equal(normalizeBet(1234, 99450), 1200);
+  assert.equal(normalizeBet(100000, 99450), 99400);
+  for (const amount of [-100, NaN, Infinity]) assert.equal(normalizeBet(amount, 99450), 0);
 });

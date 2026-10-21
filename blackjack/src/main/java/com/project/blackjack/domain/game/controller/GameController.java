@@ -16,6 +16,8 @@ public class GameController {
         service.requireMember(room, principal.getName()); return principal.getName();
     }
     @MessageMapping("/game/seat") public void seat(SeatRequest r, Principal p) { service.sitDown(r.getRoomId(), user(r.getRoomId(), p), r.getSeatIndex()); }
+    public record ReadyRequest(String roomId, boolean ready) {}
+    @MessageMapping("/game/ready") public void ready(ReadyRequest r, Principal p) { service.setReady(r.roomId(), user(r.roomId(), p), r.ready()); }
     @MessageMapping("/game/start") public void start(GameStartRequest r, Principal p) { service.setupGame(r.getRoomId(), user(r.getRoomId(), p)); }
     @MessageMapping("/game/resume") public void resume(GameStartRequest r, Principal p) { service.resume(r.getRoomId(), user(r.getRoomId(), p)); }
     @MessageMapping("/game/bet") public void bet(BetRequest r, Principal p) { service.placeBet(r.getRoomId(), user(r.getRoomId(), p), r.getBetAmount()); }

@@ -11,7 +11,7 @@ cd C:\Users\Master\blackjack\blackjack_web_game-main
 .\start-local.ps1
 ```
 
-빌드 결과와 의존성이 이미 있으면 `.\start-local.ps1 -SkipBuild`를 사용할 수 있습니다. 브라우저에서 http://localhost:5173 에 접속해 회원가입 → 로그인 → 방 입장 → 자리 앉기 → 게임 시작 순서로 진행합니다. 종료는 `.\stop-local.ps1`입니다. 실행 로그는 `.run/`에 저장합니다.
+빌드 결과와 의존성이 이미 있으면 `.\start-local.ps1 -SkipBuild`를 사용할 수 있습니다. 브라우저에서 http://localhost:5173 에 접속해 회원가입 → 로그인 → 방 입장 → 자리 앉기 → 일반 참가자 준비 완료 → 방장 게임 시작 순서로 진행합니다. 종료는 `.\stop-local.ps1`입니다. 실행 로그는 `.run/`에 저장합니다.
 
 두 명 이상 테스트하려면 일반 창과 시크릿 창 또는 서로 다른 브라우저 프로필을 사용하세요. 같은 브라우저 프로필의 탭은 로그인 저장소를 공유합니다.
 
@@ -86,3 +86,5 @@ node scripts/restart-smoke.mjs
 - `frontend/frontend-blackjack/src/pages/GamePage.tsx`: 테이블과 베팅·게임 화면.
 
 Docker Compose에서 MariaDB 저장과 백엔드 강제 종료·DB 재시작 후 게임 복구를 검증했습니다. `./start-compose.ps1`로 실행하고 http://localhost:18081 에서 접속하세요. 공개 도메인 HTTPS 검증은 배포 대상 지정 후 진행합니다.
+
+방장 권한, 준비 상태, 지연 강퇴와 베팅 조절의 규칙 및 배포 순서는 [배포 안내](docs/ROOM-READY-DEPLOYMENT.md)를 참고하세요.

@@ -49,6 +49,7 @@ jobs:
           API_URL: http://localhost:18081
         run: |
           node scripts/restart-smoke.mjs
+          node scripts/ready-smoke.mjs
           node scripts/smoke.mjs
           node scripts/chat-smoke.mjs
           node scripts/security-smoke.mjs

@@ -42,6 +42,8 @@ try {
   await until(() => users[0].state.seats['1'] === users[0].username, 'server ignores forged username');
   send(users[1], 'seat', { seatIndex: 2 });
   await until(() => users[0].state.seats['2'] === users[1].username, 'second seat');
+  send(users[1], 'ready', { ready: true });
+  await until(() => users[0].state.readyPlayers.includes(users[1].username), 'guest ready');
   send(users[0], 'start'); await until(() => users[0].state.state === 'BETTING', 'game start');
   send(users[0], 'bet', { betAmount: -1000 }); await until(() => users[0].errors.length === 1, 'negative bet rejected');
   assert.equal((await api('/api/members/me', null, users[0], 'GET')).money, 100000);

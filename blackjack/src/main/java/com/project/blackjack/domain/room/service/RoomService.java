@@ -38,6 +38,8 @@ public class RoomService {
         ensureNoOtherRoom(username, id);
         synchronized(room) {
             if (room.contains(username)) return new RoomResponse(room);
+            if (room.getKickedUntil().getOrDefault(username, 0L) > System.currentTimeMillis())
+                throw new IllegalArgumentException("강퇴 후 60초 동안 같은 방에 재입장할 수 없습니다.");
             if (room.getTotalPlayerCount() >= room.getMaxPlayers()) throw new IllegalArgumentException("방 인원이 꽉 찼습니다.");
             if (room.isPrivate() && (inviteCode==null || !passwords.matches(inviteCode,room.getInviteCode()))) throw new IllegalArgumentException("초대 코드가 일치하지 않습니다.");
             gameService.joinObserver(id,username);

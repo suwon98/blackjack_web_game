@@ -24,6 +24,23 @@ public class Room {
 
     private BlackjackGame game;
     private boolean paused;
+    private String host;
+    private Set<String> readyPlayers = ConcurrentHashMap.newKeySet();
+    private long waitingDeadline;
+    private String waitingTarget;
+    private String waitingReason;
+    private Map<String, Long> kickedUntil = new ConcurrentHashMap<>();
+
+    public boolean isWaiting() {
+        return game == null || game.getState() == com.project.blackjack.domain.game.entity.GameState.WAITING;
+    }
+
+    public void electHost() {
+        if (host != null && contains(host)) return;
+        host = new java.util.TreeMap<>(seats).values().stream().findFirst()
+            .orElseGet(() -> observers.stream().sorted().findFirst().orElse(null));
+        readyPlayers.remove(host == null ? "" : host);
+    }
 
     public static Room create(String title, int maxPlayers, boolean isPrivate, String inviteCode, long minBet) {
         Room room = new Room();
@@ -39,6 +56,7 @@ public class Room {
     }
 
     public void joinRoom(String username) {
+        if (host == null) host = username;
         if (!seats.containsValue(username)) {
             observers.add(username);
         }
@@ -60,6 +78,8 @@ public class Room {
     public void leaveRoom(String username) {
         seats.values().remove(username);
         observers.remove(username);
+        readyPlayers.remove(username);
+        electHost();
     }
 
     public int getTotalPlayerCount() {

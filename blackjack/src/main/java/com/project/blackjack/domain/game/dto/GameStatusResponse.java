@@ -10,6 +10,11 @@ import java.util.stream.Collectors;
 
 @Getter
 public class GameStatusResponse {
+    @lombok.Setter private String host;
+    @lombok.Setter private java.util.Set<String> readyPlayers;
+    @lombok.Setter private long waitingDeadline;
+    @lombok.Setter private String waitingTarget;
+    @lombok.Setter private String waitingReason;
     private final String roomId;
     private final GameState state;
     private final int currentPlayerIndex;

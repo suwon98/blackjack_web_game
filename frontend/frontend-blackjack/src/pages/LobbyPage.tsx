@@ -132,7 +132,7 @@ const LobbyPage: React.FC = () => {
       {chargeNotice && <p role="status">{chargeNotice}</p>}
       <p>잔액이 1,000 칩 미만이면 10만 칩을 충전할 수 있습니다.</p>
       {inviteRoom && <form className="recovery-panel" onSubmit={e=>{e.preventDefault();void handleJoinRoom(inviteRoom,inviteCode);}}><label htmlFor="invite-code">{inviteRoom.title} 초대 코드</label> <input id="invite-code" autoFocus type="password" maxLength={72} value={inviteCode} onChange={e=>setInviteCode(e.target.value)} required/> <button type="submit">입장</button> <button type="button" onClick={()=>setInviteRoom(null)}>취소</button></form>}
-      <details className="recovery-panel"><summary>게임 안내 · 연습용 칩</summary><p>착석 → 게임 시작 → 베팅 → Hit 또는 Stand를 선택하세요. 딜러는 소프트 17에서 멈춥니다. 블랙잭 3:2, 보험 2:1, 최대 4패 스플릿을 지원합니다.</p><p>시간이 지나면 최소 금액 자동 베팅 또는 Stand 처리됩니다. 서버 재시작 후에는 내 게임 이어하기를 선택하세요. 실제 돈을 사용하지 않습니다.</p></details>
+      <details className="recovery-panel"><summary>게임 안내 · 연습용 칩</summary><p>착석 → 일반 참가자 준비 완료 → 방장 게임 시작 → 베팅 → Hit 또는 Stand를 선택하세요. 딜러는 소프트 17에서 멈춥니다. 블랙잭 3:2, 보험 2:1, 최대 4패 스플릿을 지원합니다.</p><p>시간이 지나면 최소 금액 자동 베팅 또는 Stand 처리됩니다. 서버 재시작 후에는 내 게임 이어하기를 선택하세요. 실제 돈을 사용하지 않습니다.</p></details>
       <div className="lobby-controls">
         <button className="btn-create" onClick={() => setIsModalOpen(true)}>방 만들기</button>
         <button className="btn-refresh" onClick={handleRefreshRooms}>새로고침 🔄</button>
