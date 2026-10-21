@@ -47,6 +47,7 @@ public class GameService {
             try {
                 transactions.executeWithoutResult(tx -> {
                     operation.accept(r);
+                    refreshWaiting(r, System.currentTimeMillis());
                     if(r.getGame()!=null) r.getGame().setRevision(r.getGame().getRevision()+1);
                     roomManager.persist(r);
                 });
@@ -85,7 +86,9 @@ public class GameService {
     }
     public void setupGame(String id, String name) {
         change(id, r -> {
-            require(r.getSeats().containsValue(name), "착석한 플레이어만 시작할 수 있습니다.");
+            require(Objects.equals(r.getHost(), name), "방장만 게임을 시작할 수 있습니다.");
+            require(r.getSeats().containsValue(name), "방장이 먼저 착석해야 합니다.");
+            require(r.getSeats().values().stream().filter(n -> !n.equals(name)).allMatch(r.getReadyPlayers()::contains), "모든 참가자가 준비를 완료해야 합니다.");
             require(r.getGame() == null || r.getGame().getState() == GameState.WAITING, "이미 진행 중인 게임입니다.");
             if (r.getGame() == null) {
                 Dealer d = new Dealer(); d.initializeHand();
@@ -94,7 +97,57 @@ public class GameService {
             beginRound(r);
         });
     }
+    public void setReady(String id, String name, boolean ready) {
+        change(id, r -> {
+            require(r.isWaiting() && !r.isPaused(), "대기 중에만 준비 상태를 변경할 수 있습니다.");
+            require(r.getSeats().containsValue(name), "먼저 자리에 앉아주세요.");
+            require(!Objects.equals(r.getHost(), name), "방장은 게임 시작 버튼을 사용해주세요.");
+            if (ready) r.getReadyPlayers().add(name); else r.getReadyPlayers().remove(name);
+        });
+    }
+    private void refreshWaiting(Room r, long now) {
+        r.electHost();
+        r.getReadyPlayers().retainAll(r.getSeats().values());
+        if (r.getHost()!=null) r.getReadyPlayers().remove(r.getHost());
+        r.getKickedUntil().entrySet().removeIf(e -> e.getValue() <= now);
+        String target=null, reason=null;
+        if (r.isWaiting() && !r.isPaused()) {
+            var guests=r.getSeats().values().stream().filter(n -> !n.equals(r.getHost())).sorted().toList();
+            var unready=guests.stream().filter(n -> !r.getReadyPlayers().contains(n)).toList();
+            if (!guests.isEmpty() && unready.isEmpty()) { target=r.getHost(); reason="HOST_IDLE"; }
+            else if (guests.size()>=2 && unready.size()==1) { target=unready.get(0); reason="NOT_READY"; }
+        }
+        if (target==null) { r.setWaitingDeadline(0); }
+        else if (!Objects.equals(target,r.getWaitingTarget()) || !Objects.equals(reason,r.getWaitingReason()) || r.getWaitingDeadline()==0)
+            r.setWaitingDeadline(now+10000);
+        r.setWaitingTarget(target);r.setWaitingReason(reason);
+    }
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void restoreWaitingTimers() {
+        for (Room r:roomManager.findAll()) if(r.isWaiting()) {
+            change(r.getRoomId(), room -> room.setWaitingDeadline(0));
+        }
+    }
+    private void scheduleWaiting(Room r) {
+        if(stopping || r.getWaitingDeadline()==0) return;
+        long deadline=r.getWaitingDeadline();String target=r.getWaitingTarget();
+        timers.schedule(() -> expireWaiting(r.getRoomId(),r,deadline,target),Math.max(1,deadline-System.currentTimeMillis()),TimeUnit.MILLISECONDS);
+    }
+    void expireWaiting(String id, Room expected, long deadline, String target) {
+        synchronized(expected) {
+            if(stopping || roomManager.findById(id)!=expected || !expected.isWaiting() || expected.isPaused()
+                || expected.getWaitingDeadline()!=deadline || !Objects.equals(expected.getWaitingTarget(),target)
+                || System.currentTimeMillis()<deadline) return;
+            String reason=expected.getWaitingReason();
+            try {
+                change(id,r -> { r.leaveRoom(target);r.getKickedUntil().put(target,System.currentTimeMillis()+60000); });
+                messaging.convertAndSendToUser(target,"/queue/room-events",Map.of("roomId",id,"type","KICKED","message",
+                    "HOST_IDLE".equals(reason)?"준비 완료 후 10초 동안 시작하지 않아 방에서 퇴장되었습니다.":"혼자 미준비 상태로 10초가 지나 방에서 퇴장되었습니다."));
+            } catch(Exception e) { log.error("대기 타이머 처리 실패: {}",id,e); }
+        }
+    }
     private void beginRound(Room r) {
+        r.getReadyPlayers().clear();
         BlackjackGame g = r.getGame(); r.setPaused(false); g.resetForNextRound(); g.setSettled(false); g.setRoundId(g.getRoundId() + 1);
         List<Player> players = new ArrayList<>();
         for (var entry : new TreeMap<>(r.getSeats()).entrySet()) {
@@ -111,6 +164,7 @@ public class GameService {
     // Set a durable deadline only; scheduling is performed after the DB commit.
     private void later(Room r,long delay,Runnable ignored) { r.getGame().setDeadline(System.currentTimeMillis()+delay); }
     private void scheduleCommitted(Room r) {
+        scheduleWaiting(r);
         BlackjackGame g=r.getGame();
         if(stopping || r.isPaused() || g==null || g.getDeadline()==0 || g.getState()==GameState.WAITING) return;
         long revision=g.getRevision(), deadline=g.getDeadline();
@@ -283,6 +337,8 @@ public class GameService {
     public void syncGameState(String id) { Room r = room(id); synchronized(r) { broadcast(r); } }
     private void broadcast(Room r) {
         GameStatusResponse response = new GameStatusResponse(r.getRoomId(), r.getGame(), r.getSeats());
+        response.setHost(r.getHost()); response.setReadyPlayers(Set.copyOf(r.getReadyPlayers()));
+        response.setWaitingDeadline(r.getWaitingDeadline());response.setWaitingTarget(r.getWaitingTarget());response.setWaitingReason(r.getWaitingReason());
         response.setPaused(r.isPaused()); response.setTitle(r.getTitle());
         response.setMinBet(r.getMinBet()); response.setMaxPlayers(r.getMaxPlayers());
         messaging.convertAndSend("/topic/room/" + r.getRoomId(), response);

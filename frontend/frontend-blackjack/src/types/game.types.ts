@@ -52,6 +52,11 @@ export interface DealerDto {
 }
 
 export interface GameStatusResponse {
+  host: string | null;
+  readyPlayers: string[];
+  waitingDeadline: number;
+  waitingTarget: string | null;
+  waitingReason: 'HOST_IDLE' | 'NOT_READY' | null;
   roomId: string;
   paused: boolean;
   title: string;

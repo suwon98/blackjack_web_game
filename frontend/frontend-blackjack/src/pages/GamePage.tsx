@@ -6,7 +6,7 @@ import DealerBoard from '../components/DealerBoard';
 import PlayerBoard from '../components/PlayerBoard';
 import ActionButtons from '../components/ActionButtons';
 import ChatPanel from '../components/ChatPanel';
-import { addBet, maximumBet } from '../utils/betting';
+import { addBet, maximumBet, normalizeBet } from '../utils/betting';
 import '../styles/GamePage.css';
 import '../styles/Board.css';
 
@@ -14,16 +14,21 @@ const GamePage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
 
-  const { 
-    isConnected, gameData, currentUsername, connect, disconnect, 
-    startGame, resumeGame, sendBet, sendInsurance, sendSeat, error, pending, clockOffset 
+  const {
+    isConnected, gameData, currentUsername, connect, disconnect,
+    startGame, sendReady, kicked, resumeGame, sendBet, sendInsurance, sendSeat, error, pending, clockOffset
   } = useGameStore();
-  
+
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaveError, setLeaveError] = useState('');
   const [betAmount, setBetAmount] = useState<number>(0);
   const [now, setNow] = useState(() => Date.now());
   const timeLeft = Math.max(0, Math.ceil(((gameData?.deadline ?? 0) - now - clockOffset) / 1000));
+  const waitingSeconds = Math.max(0, Math.ceil(((gameData?.waitingDeadline ?? 0) - now - clockOffset) / 1000));
+  const isHost = gameData?.host === currentUsername;
+  const isSeated = Object.values(gameData?.seats ?? {}).includes(currentUsername);
+  const isReady = gameData?.readyPlayers?.includes(currentUsername) ?? false;
+  const guestsReady = Object.values(gameData?.seats ?? {}).filter(name => name !== gameData?.host).every(name => gameData?.readyPlayers?.includes(name));
   const hasBet = gameData?.bets[currentUsername] !== undefined;
   const [prevRound, setPrevRound] = useState<number | undefined>(undefined);
 
@@ -50,12 +55,12 @@ const GamePage: React.FC = () => {
     const myActualSeat = Object.keys(gameData?.seats || {}).find(
       key => gameData?.seats?.[Number(key)] === currentUsername
     );
-    
+
     if (myActualSeat !== undefined) {
       const myIdx = Number(myActualSeat);
       return (actualSeatIdx - myIdx + 6) % 6;
     }
-    
+
     return actualSeatIdx - 1;
   };
 
@@ -78,7 +83,7 @@ const GamePage: React.FC = () => {
   };
 
   const handleResetBet = () => {
-    setBetAmount(0);
+    setBetAmount(gameData?.minBet ?? 1000);
   };
 
   const handlePlaceBet = () => {
@@ -87,11 +92,13 @@ const GamePage: React.FC = () => {
 
     }
   };
-  
+
   const handleLeaveRoom = async () => {
     try { if (roomId) await leaveRoom(roomId); disconnect(); navigate('/'); }
     catch { setLeaveError('퇴장 요청에 실패했습니다. 연결을 확인하고 다시 시도해주세요.'); }
   };
+
+  if (kicked) return <div className="game-container"><h2>방에서 퇴장되었습니다</h2><p role="alert">{kicked}</p><p>같은 방에는 60초 후 다시 입장할 수 있습니다.</p><button onClick={() => navigate('/')}>로비로 돌아가기</button></div>;
 
   if (error && !isConnected) {
     return (
@@ -115,29 +122,12 @@ const GamePage: React.FC = () => {
 
       {gameData?.paused && <section className="recovery-panel" role="status"><h2>진행 중이던 게임을 복구했습니다</h2><p>카드, 베팅과 잔액이 저장된 상태입니다. 이어하기를 누르면 제한시간을 새로 시작합니다.</p><button disabled={pending || !isConnected} onClick={() => roomId && resumeGame(roomId)}>게임 이어하기</button></section>}
       {confirmLeave && <div className="recovery-panel" role="dialog" aria-label="방 나가기 확인"><p>진행 중인 패는 Stand 처리 후 정산됩니다. 나가시겠습니까?</p><button onClick={handleLeaveRoom}>나가기</button> <button autoFocus onClick={() => setConfirmLeave(false)}>계속 플레이</button>{leaveError && <p role="alert">{leaveError}</p>}</div>}
-      {/* 카지노 테이블 영역 */}
-      <div className="casino-table-wrapper">
-        <div className="casino-table">
-          
-          {/* 카드 슈 */}
-          <div className="card-shoe">
-            <div className="cut-card-line"></div>
-            
-            <div 
-              className="card-shoe-deck" 
-              style={{ 
-                height: `${Math.max(0, Math.min(100, ((gameData?.remainingCards ?? 312) / 312) * 100))}%` 
-              }}
-            ></div>
-          </div>
-
-          {/* 딜러 영역 */}
-          {gameData?.dealer && gameData.state !== 'WAITING' && gameData.state !== 'BETTING' && (
-            <div className="dealer-area">
-              <DealerBoard dealer={gameData.dealer} />
-            </div>
-          )}
-
+      {gameData?.state === 'WAITING' && <section className="ready-panel" aria-label="게임 준비 상태">
+        <strong>방장: {gameData.host} · 착석한 참가자만 준비 대상입니다.</strong>
+        <ul>{Object.values(gameData.seats).map(name => <li key={name}>{name} — {name === gameData.host ? '방장' : gameData.readyPlayers.includes(name) ? '준비 완료' : '준비 대기'}</li>)}</ul>
+        <p>일반 참가자가 모두 준비하면 방장은 10초 안에 시작해야 합니다. 일반 참가자가 2명 이상이고 한 명만 미준비이면 그 참가자에게 10초가 주어집니다.</p>
+        {gameData.waitingTarget && <p className="ready-warning" role="status">{gameData.waitingTarget}: {gameData.waitingReason === 'HOST_IDLE' ? '게임 시작' : '준비 완료'}까지 {waitingSeconds}초 · 제한시간이 지나면 자동 퇴장됩니다.</p>}
+      </section>}
           {/* 칩 배팅 */}
           {!gameData?.paused && gameData?.state === 'BETTING' && myPlayerInfo && (
             <div className="table-center-overlay">
@@ -149,22 +139,52 @@ const GamePage: React.FC = () => {
                     <div className="my-money-info">(내 칩: {myPlayerInfo.money.toLocaleString()} 칩)</div>
                     <div className="my-money-info">베팅은 100칩 단위입니다. MAX는 베팅 가능한 최대 금액을 선택합니다.</div>
                   </div>
-                  <div className="chip-buttons">
-                    <button className="chip-btn chip-1k" onClick={() => handleAddChip(100)}>100</button>
-                    <button className="chip-btn chip-1k" onClick={() => handleAddChip(1000)}>1K</button>
-                    <button className="chip-btn chip-10k" onClick={() => handleAddChip(10000)}>1만</button>
-                    <button className="chip-btn chip-50k" onClick={() => handleAddChip(50000)}>5만</button>
-                    <button className="chip-btn chip-100k" onClick={() => handleAddChip(100000)}>10만</button>
-                    <button className="chip-btn chip-max" onClick={handleAllIn}>MAX</button>
-                  </div>
+                  <fieldset className="bet-controls" disabled={pending || !isConnected}>
+                    <label htmlFor="bet-amount">베팅 금액 직접 입력 (100칩 단위)</label>
+                    <input id="bet-amount" type="number" inputMode="numeric" min={0} max={maximumBet(myPlayerInfo.money)} step={100} value={betAmount}
+                      onChange={event => setBetAmount(Math.max(0, Math.min(Number(event.target.value) || 0, maximumBet(myPlayerInfo.money))))}
+                      onBlur={() => setBetAmount(value => normalizeBet(value, myPlayerInfo.money))} />
+                    <div className="chip-adjustments">
+                      {[100, 1000, 10000, 50000, 100000].map(amount => <div className="chip-adjustment" key={amount}>
+                        <button aria-label={`${amount}칩 빼기`} disabled={betAmount === 0} onClick={() => handleAddChip(-amount)}>−</button>
+                        <span>{amount.toLocaleString()}</span>
+                        <button aria-label={`${amount}칩 더하기`} disabled={betAmount >= maximumBet(myPlayerInfo.money)} onClick={() => handleAddChip(amount)}>+</button>
+                      </div>)}
+                    </div>
+                    <button className="btn-reset" onClick={handleAllIn}>MAX</button>
+                  </fieldset>
+                  {betAmount < gameData.minBet && <p role="status">최소 {gameData.minBet.toLocaleString()}칩 이상을 선택해주세요.</p>}
                   <div className="bet-action-buttons">
-                    <button onClick={handleResetBet} className="btn-reset" disabled={betAmount === 0}>초기화</button>
-                    <button onClick={handlePlaceBet} className="btn-next btn-confirm-bet" disabled={pending || !isConnected || betAmount < (gameData?.minBet ?? 100) || betAmount % 100 !== 0}>배팅 확정</button>
+                    <button onClick={handleResetBet} className="btn-reset" disabled={pending || !isConnected || betAmount === gameData.minBet}>최소 베팅</button>
+                    <button onClick={handlePlaceBet} className="btn-next btn-confirm-bet" disabled={pending || !isConnected || betAmount < (gameData?.minBet ?? 100) || betAmount % 100 !== 0 || betAmount > maximumBet(myPlayerInfo.money)}>배팅 확정</button>
                   </div>
                 </div>
               ) : (
                 <h3 className="betting-completed-text">✔️ 배팅 완료! 다른 플레이어를 기다리는 중...</h3>
               )}
+            </div>
+          )}
+
+      {/* 카지노 테이블 영역 */}
+      <div className="casino-table-wrapper">
+        <div className="casino-table">
+
+          {/* 카드 슈 */}
+          <div className="card-shoe">
+            <div className="cut-card-line"></div>
+
+            <div
+              className="card-shoe-deck"
+              style={{
+                height: `${Math.max(0, Math.min(100, ((gameData?.remainingCards ?? 312) / 312) * 100))}%`
+              }}
+            ></div>
+          </div>
+
+          {/* 딜러 영역 */}
+          {gameData?.dealer && gameData.state !== 'WAITING' && gameData.state !== 'BETTING' && (
+            <div className="dealer-area">
+              <DealerBoard dealer={gameData.dealer} />
             </div>
           )}
 
@@ -177,12 +197,12 @@ const GamePage: React.FC = () => {
 
               return (
                 <div key={seatIndex} className={`seat-slot pos-${getVisualPos(seatIndex)}`}>
-                  
+
                   {seatOwner ? (
                     playerObj ? (
-                      <PlayerBoard 
-                        player={playerObj} 
-                        isMe={seatOwner === currentUsername} 
+                      <PlayerBoard
+                        player={playerObj}
+                        isMe={seatOwner === currentUsername}
                         isCurrentTurn={gameData.currentPlayerIndex !== null && gameData.players[gameData.currentPlayerIndex]?.name === seatOwner}
                         gameState={gameData.state}
                         dealerScore={gameData.dealer?.score || 0}
@@ -190,14 +210,14 @@ const GamePage: React.FC = () => {
                     ) : (
                       <div className="status-badge bottom-badge">
                         <span className="name">{seatOwner} {seatOwner === currentUsername && '(나)'}</span>
-                        <span>{gameData?.state === 'WAITING' ? '착석 완료 · 게임을 시작하세요' : '⏳ 다음 라운드 대기중...'}</span>
+                        <span>{gameData?.state === 'WAITING' ? (seatOwner === gameData.host ? '방장' : gameData.readyPlayers.includes(seatOwner) ? '준비 완료' : '준비 대기') : '⏳ 다음 라운드 대기중...'}</span>
                       </div>
                     )
                   ) : (
                     !isMeSitting && (
-                      <button 
-                        className="btn-bar-primary" 
-                        style={{ opacity: 0.8, transform: 'scale(0.8)' }} 
+                      <button
+                        className="btn-bar-primary"
+                        style={{ opacity: 0.8, transform: 'scale(0.8)' }}
                         disabled={pending || !isConnected}
                         onClick={() => handleSeatClick(seatIndex)}
                       >
@@ -205,7 +225,7 @@ const GamePage: React.FC = () => {
                       </button>
                     )
                   )}
-                  
+
                 </div>
               );
             })}
@@ -217,13 +237,13 @@ const GamePage: React.FC = () => {
       <ChatPanel />
       {/* 하단 고정 액션 바 */}
       <div className="bottom-action-bar" style={{display:gameData?.paused?'none':undefined}}>
-        
+
         {/* 대기 상태 */}
         {(!gameData || gameData.state === 'WAITING') && (
           <div className="action-bar-content">
-            <button onClick={handleStartGame} disabled={pending || !isConnected || !Object.values(gameData?.seats ?? {}).includes(currentUsername)} className="btn-bar-primary">
-              ▶️ 게임 시작
-            </button>
+            {isHost ? <button onClick={handleStartGame} disabled={pending || !isConnected || !isSeated || !guestsReady} className="btn-bar-primary">▶️ 게임 시작</button>
+              : <button onClick={() => roomId && sendReady(roomId, !isReady)} disabled={pending || !isConnected || !isSeated} aria-pressed={isReady} className="btn-bar-primary">{isReady ? '준비 취소' : '준비 완료'}</button>}
+            {!isSeated && <span>먼저 자리에 앉아주세요.</span>}
           </div>
         )}
 
@@ -246,7 +266,7 @@ const GamePage: React.FC = () => {
         {/* 내 턴 */}
         {isMyTurn && activeHand && myPlayerInfo && (
           <div className="action-bar-content">
-            <ActionButtons 
+            <ActionButtons
               handIndex={activeHandIndex}
               playerMoney={myPlayerInfo.money}
               betAmount={activeHand.betAmount}

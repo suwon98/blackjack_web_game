@@ -17,6 +17,8 @@ interface GameStore {
   roomId: string | null;
   error: string | null;
   pending: boolean;
+  kicked: string | null;
+  sendReady: (roomId: string, ready: boolean) => void;
   clockOffset: number;
   connect: (roomId: string, username?: string) => void;
   disconnect: () => void;
@@ -46,6 +48,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       client.publish({ destination: '/app/chat/send', body: JSON.stringify({ roomId: get().roomId === 'lobby' ? null : get().roomId, kind, text }) });
       return true;
     },
+    kicked: null,
     clockOffset: 0, gameData: null, isConnected: false, stompClient: null, currentUsername: '', roomId: null, error: null, pending: false,
     connect: (roomId) => {
       if (get().stompClient && get().roomId === roomId) return;
@@ -74,6 +77,14 @@ export const useGameStore = create<GameStore>((set, get) => {
           const incoming: ChatMessage = JSON.parse(message.body);
           set(state => ({ messages: [...state.messages.filter(item => item.id !== incoming.id), incoming].slice(-100) }));
         });
+        client.subscribe('/user/queue/room-events', message => {
+          if (get().stompClient !== client) return;
+          const event = JSON.parse(message.body);
+          if (event.type === 'KICKED' && event.roomId === roomId) {
+            set({ kicked: event.message, pending: false, isConnected: false, gameData: null });
+            void client.deactivate();
+          }
+        });
         client.subscribe('/user/queue/errors', message => {
           if (get().stompClient !== client) return;
           const data = JSON.parse(message.body);
@@ -88,13 +99,14 @@ export const useGameStore = create<GameStore>((set, get) => {
         if (get().stompClient !== client) return;
         set({ error: '게임 연결이 거부되었습니다. 로비에서 다시 입장해주세요.', isConnected: false, pending: false });
       };
-      set({ stompClient: client, roomId, error: null }); client.activate();
+      set({ stompClient: client, roomId, error: null, kicked: null }); client.activate();
     },
     disconnect: () => {
       const client = get().stompClient;
       set({ stompClient: null, isConnected: false, gameData: null, roomId: null, pending: false, messages: [], chatError: null });
       if (client) void client.deactivate();
     },
+    sendReady: (roomId, ready) => send('ready', { roomId, ready }),
     sendSeat: (roomId, seatIndex) => send('seat', { roomId, seatIndex }),
     resumeGame: roomId => send('resume', { roomId }),
     startGame: roomId => send('start', { roomId }),

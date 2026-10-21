@@ -278,3 +278,20 @@
   .action-buttons-container { flex-wrap: wrap; justify-content: center; gap: 6px; padding: 0; margin: 0; }
   .action-buttons-container .btn-action { font-size: .85rem; padding: 10px 12px; }
 }
+
+.ready-panel { width: 100%; max-width: 1000px; padding: 14px; border: 1px solid #5d8573; border-radius: 10px; background: #142c24; margin: 12px 0; }
+.ready-panel ul { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-left: 20px; }
+.ready-panel p { margin: 8px 0 0; line-height: 1.5; }
+.ready-warning { color: #ffda78; font-weight: 700; }
+.bet-controls { border: 0; padding: 0; margin: 0 0 12px; display: grid; gap: 10px; }
+.bet-controls input { width: 100%; box-sizing: border-box; color: #fff; background: #1a2621; border: 1px solid #91b6a3; border-radius: 6px; padding: 8px; font-size: 1rem; }
+.chip-adjustments { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.chip-adjustment { display: flex; align-items: center; gap: 4px; background: #243c31; border-radius: 8px; padding: 3px; }
+.chip-adjustment button { min-width: 36px; min-height: 36px; color: #fff; background: #355b48; border: 1px solid #7d9f8d; border-radius: 5px; font-size: 1.15rem; }
+.chip-adjustment span { min-width: 48px; font-size: .8rem; }
+.bet-controls button:disabled, .btn-bar-primary:disabled { opacity: .5; cursor: not-allowed; }
+.table-center-overlay { box-sizing: border-box; width: min(600px, 96%); min-width: 0; padding: 16px; }
+.current-bet-display { margin-bottom: 12px; }
+@media (max-width: 760px) { .table-center-overlay { padding: 10px; } .betting-title { font-size: 1rem; margin-bottom: 8px; } .current-bet-display { font-size: .85rem; } .current-bet-display span { font-size: 1.2rem; } .my-money-info { font-size: .75rem; } }
+
+.game-container > .table-center-overlay { position: relative; top: auto; left: auto; transform: none; width: 100%; max-width: 600px; margin: 14px auto 0; z-index: auto; }

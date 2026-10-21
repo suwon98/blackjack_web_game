@@ -40,8 +40,8 @@ public class StompHandler implements ChannelInterceptor {
             if(!tokens.validateAccessToken(token) || !sessions.active(a.getUser().getName(),tokens.sessionId(token))) throw new IllegalArgumentException("세션이 만료되었습니다. 다시 연결해주세요.");
             String dest = a.getDestination();
             if (a.getCommand() == StompCommand.SEND) {
-                if (!"/app/chat/send".equals(dest) && (dest == null || !dest.matches("/app/game/(seat|start|resume|bet|insurance|action|sync)"))) throw new IllegalArgumentException("허용하지 않는 경로입니다.");
-            } else if (!"/user/queue/errors".equals(dest)) {
+                if (!"/app/chat/send".equals(dest) && (dest == null || !dest.matches("/app/game/(seat|start|ready|resume|bet|insurance|action|sync)"))) throw new IllegalArgumentException("허용하지 않는 경로입니다.");
+            } else if (!"/user/queue/errors".equals(dest) && !"/user/queue/room-events".equals(dest)) {
                 if ("/topic/chat/lobby".equals(dest)) return message;
                 String prefix = dest != null && dest.startsWith("/topic/chat/room/") ? "/topic/chat/room/" : "/topic/room/";
                 if (dest == null || !dest.startsWith(prefix)) throw new IllegalArgumentException("허용하지 않는 구독입니다.");

@@ -13,7 +13,7 @@ public class RoomCodec {
     public record SavedGame(List<SavedCard> deck, SavedHand dealer, List<SavedPlayer> players, GameState state,
         int currentPlayer, long revision, long deadline, long round, boolean settled, Map<String,Long> bets, Map<String,Boolean> insurance) {}
     public record Snapshot(int schema, String id, String title, int maxPlayers, boolean privateRoom, String inviteHash,
-        long minBet, Map<Integer,String> seats, Set<String> observers, boolean paused, SavedGame game) {}
+        long minBet, Map<Integer,String> seats, Set<String> observers, boolean paused, SavedGame game, String host, Set<String> readyPlayers, Long waitingDeadline, String waitingTarget, String waitingReason, Map<String,Long> kickedUntil) {}
     private List<SavedCard> cards(List<Card> cards) { return cards.stream().map(c -> new SavedCard(c.getSuit(),c.getDenomination())).toList(); }
     private SavedHand hand(Hand h) { return new SavedHand(cards(h.getCards()),h.getStatus(),h.getBetAmount(),h.isSplit(),h.getResult(),h.getPayout()); }
     public String encode(Room r) {
@@ -21,7 +21,7 @@ public class RoomCodec {
         if(g!=null) saved=new SavedGame(cards(g.getDeck().getCards()),hand(g.getDealer().getHand()),g.getPlayers().stream()
             .map(p -> new SavedPlayer(p.getName(),p.getMoney(),p.isHasInsurance(),p.getHands().stream().map(this::hand).toList())).toList(),
             g.getState(),g.getCurrentPlayerIndex(),g.getRevision(),g.getDeadline(),g.getRoundId(),g.isSettled(),Map.copyOf(g.getRoundBets()),Map.copyOf(g.getInsuranceDecisions()));
-        return json.writeValueAsString(new Snapshot(1,r.getRoomId(),r.getTitle(),r.getMaxPlayers(),r.isPrivate(),r.getInviteCode(),r.getMinBet(),Map.copyOf(r.getSeats()),Set.copyOf(r.getObservers()),r.isPaused(),saved));
+        return json.writeValueAsString(new Snapshot(1,r.getRoomId(),r.getTitle(),r.getMaxPlayers(),r.isPrivate(),r.getInviteCode(),r.getMinBet(),Map.copyOf(r.getSeats()),Set.copyOf(r.getObservers()),r.isPaused(),saved,r.getHost(),Set.copyOf(r.getReadyPlayers()),r.getWaitingDeadline(),r.getWaitingTarget(),r.getWaitingReason(),Map.copyOf(r.getKickedUntil())));
     }
     private List<Card> restoreCards(List<SavedCard> cards) { return cards.stream().map(c -> new Card(c.suit(),c.denomination())).toList(); }
     private Hand restoreHand(SavedHand h) {
@@ -31,6 +31,10 @@ public class RoomCodec {
         Snapshot s=json.readValue(payload,Snapshot.class);
         if(s.schema()!=1) throw new IllegalStateException("Unsupported game snapshot schema: "+s.schema());
         Room r=Room.create(s.title(),s.maxPlayers(),s.privateRoom(),s.inviteHash(),s.minBet());r.setRoomId(s.id());r.getSeats().putAll(s.seats());r.getObservers().addAll(s.observers());r.setPaused(s.paused());
+        r.setHost(s.host()); r.electHost();
+        if(s.readyPlayers()!=null) r.getReadyPlayers().addAll(s.readyPlayers());
+        r.setWaitingDeadline(s.waitingDeadline()==null?0:s.waitingDeadline());r.setWaitingTarget(s.waitingTarget());r.setWaitingReason(s.waitingReason());
+        if(s.kickedUntil()!=null) r.getKickedUntil().putAll(s.kickedUntil());
         if(s.game()!=null) {
             SavedGame a=s.game(); Deck d=new Deck();d.getCards().clear();d.getCards().addAll(restoreCards(a.deck()));
             Dealer dealer=new Dealer();dealer.initializeHand();dealer.getHand().getCards().addAll(restoreCards(a.dealer().cards()));
@@ -42,5 +46,7 @@ public class RoomCodec {
     }
     public void restore(Room target,String payload) {
         Room r=decode(payload);target.setGame(r.getGame());target.setSeats(r.getSeats());target.setObservers(r.getObservers());target.setPaused(r.isPaused());
+        target.setHost(r.getHost());target.setReadyPlayers(r.getReadyPlayers());target.setWaitingDeadline(r.getWaitingDeadline());
+        target.setWaitingTarget(r.getWaitingTarget());target.setWaitingReason(r.getWaitingReason());target.setKickedUntil(r.getKickedUntil());
     }
 }
